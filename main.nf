@@ -11,13 +11,22 @@ params.skip_consensus = false  // Run consensus taxa (intersect MetaPhlAn + Brac
 params.skip_humann3 = true           // Skip HUMAnN3 functional profiling (set false to enable)
 params.run_decontam = true           // Enable decontamination step
 params.run_batch_correction = false   // disable batch correction step
+params.run_diff_abund = false        // Enable differential abundance analysis (Step 6)
+
+// Per-tool DA gates (only used when run_diff_abund = true)
+params.run_maaslin  = true
+params.run_ancombc  = true
+params.run_birdman  = true
+params.run_qadabra  = false   // Qadabra requires pre-built Snakemake conda envs
+params.run_da_concordance = true
 
 // Entry point for resuming workflow
-params.start_from = 'beginning'  // Options: 'beginning', 'decontam', 'batch_correction'
+params.start_from = 'beginning'  // Options: 'beginning', 'decontam', 'batch_correction', 'diff_abund'
 
 // Input files for specific entry points
 params.consensus_otu_table = null  // For starting from decontam
 params.decontam_otu_table = null   // For starting from batch_correction
+params.diff_abund_otu_table = null // For starting from diff_abund (corrected count TSV)
 params.metadata_file = null  // Required for decontam/batch_correction: --metadata_file <path>
 // ============================================================================
 // DECONTAMINATION PARAMETERS
@@ -58,6 +67,11 @@ params.humann3_dir = "${projectDir}/RESULTS/HUMANN3"
 params.consensus_taxa_dir = "${projectDir}/RESULTS/CONSENSUS_TAXA"
 params.decontam_dir = "${projectDir}/RESULTS/04_DECONTAMINATION"
 params.batch_corr_dir = "${projectDir}/RESULTS/05_BATCH_CORRECTION"
+params.ancombc_dir = "${projectDir}/RESULTS/06_ANCOMBC"
+params.maaslin_dir = "${projectDir}/RESULTS/07_MAASLIN"
+params.birdman_dir = "${projectDir}/RESULTS/08_BIRDMAN"
+params.qadabra_dir = "${projectDir}/RESULTS/09_QADABRA"
+params.da_concordance_dir = "${projectDir}/RESULTS/10_DA_CONCORDANCE"
 params.antismash_dir = "${projectDir}/RESULTS/ANTISMASH"
 
 // ============================================================================
@@ -88,6 +102,11 @@ params.metaphlan4_env = "./conda_envs/metaphlan4_env.yml"
 params.humann3_env = "./conda_envs/humann3_env.yml"
 params.decontam_env = "./conda_envs/decontam_env.yml"
 params.batch_corr_env = "./conda_envs/batch_correction_env.yml"
+params.maaslin_env = "./conda_envs/maaslin_env.yml"
+params.ancombc_env = "./conda_envs/ancombc_env.yml"
+params.birdman_env = "./conda_envs/birdman_env.yml"
+params.qadabra_env = "./conda_envs/qadabra_env.yml"
+params.da_concordance_env = "./conda_envs/da_concordance_env.yml"
 params.antismash_env = "./conda_envs/antismash_env.yml"
 params.batch_corr_method = "tune"  // Batch correction method: "tune", "combat", "combat_seq"
 
@@ -101,6 +120,26 @@ params.metaphlan4_pack ="/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflo
 params.scripts ="${projectDir}/scripts"
 params.decontam_script = "${projectDir}/scripts/251006_decontamination_ver2.R"
 params.batch_corr_script = "${projectDir}/scripts/2500703_batch_correction_normalization.r"
+params.maaslin_script = "${projectDir}/scripts/run_maaslin.R"
+params.ancombc_script = "${projectDir}/scripts/run_ancombc.R"
+params.birdman_script = "${projectDir}/scripts/run_birdman.py"
+params.da_concordance_script = "${projectDir}/scripts/run_da_concordance.py"
+
+// ============================================================================
+// DIFFERENTIAL ABUNDANCE PARAMETERS
+// ============================================================================
+
+params.da_levels = "genus,species"      // Taxonomic levels to run
+params.da_formula = "Type"              // Default formula (single, for clean concordance)
+params.da_formula_name = "type"         // Short name for the default formula
+params.da_formulas = null               // Optional: semicolon-separated list of "name:formula"
+params.da_reference = "Normal"          // Reference level of type_column
+params.da_target = "Tumor"             // Target level of type_column
+params.da_min_prevalence = 0.10         // Minimum taxon prevalence fraction
+params.maaslin_normalization = "TSS"    // MaAsLin normalization (TSS, CLR, NONE, ...)
+params.maaslin_transform = "LOG"        // MaAsLin transform (LOG, NONE, ...)
+params.da_p_adj_method = "holm"         // ANCOMBC p-value adjustment method
+params.da_alpha = 0.05                  // ANCOMBC significance threshold
 
 // ============================================================================
 // MODULE IMPORTS
@@ -124,6 +163,13 @@ include { humann3; merge_humann3 } from './Modules/humann3.nf'
 // Preprocessing modules (optional)
 include { Decontamination } from './Modules/decontamination.nf'
 include { BatchCorrection } from './Modules/batch_correction.nf'
+
+// Differential abundance modules (Step 6)
+include { MaAsLin } from './Modules/maaslin.nf'
+include { ANCOMBC } from './Modules/ancombc.nf'
+include { BIRDMAn } from './Modules/birdman.nf'
+include { Qadabra } from './Modules/qadabra.nf'
+include { DAConcordance } from './Modules/da_concordance.nf'
 
 // ============================================================================
 // MAIN WORKFLOW
@@ -375,6 +421,103 @@ workflow {
         }
 
         BatchCorrection(ch_batch_input)
+    }
+
+    // ============================================================================
+    // STEP 6: DIFFERENTIAL ABUNDANCE (OPTIONAL)
+    // ============================================================================
+
+    if (params.run_diff_abund) {
+
+        // ---- Build (prefix, otu_table, metadata) input channel ----
+        if (params.start_from == 'diff_abund') {
+            if (!params.diff_abund_otu_table || !params.metadata_file) {
+                error "ERROR: When starting from 'diff_abund', you must provide:\n" +
+                      "  --diff_abund_otu_table <path>\n" +
+                      "  --metadata_file <path>"
+            }
+            Channel.of(tuple(
+                'diff_abund_run',
+                file(params.diff_abund_otu_table),
+                file(params.metadata_file)
+            )).set { ch_da_input }
+
+        } else if (params.run_batch_correction) {
+            // Prefer batch-corrected output; BatchCorrection does not emit metadata so re-attach
+            if (!params.metadata_file) {
+                error "ERROR: --metadata_file is required for diff_abund when using batch correction"
+            }
+            BatchCorrection.out.corrected
+                .map { prefix, corrected_files, norm_files, pcoa_files, permanova ->
+                    def files = corrected_files instanceof List ? corrected_files : [corrected_files]
+                    def otu = files.find { it.name == 'ConQuR_tuned.tsv' } ?: files[0]
+                    tuple(prefix, otu, file(params.metadata_file))
+                }
+                .set { ch_da_input }
+
+        } else if (params.run_decontam) {
+            ch_for_batch_corr.set { ch_da_input }
+
+        } else if (params.decontam_otu_table) {
+            Channel.of(tuple(
+                'diff_abund_run',
+                file(params.decontam_otu_table),
+                file(params.metadata_file)
+            )).set { ch_da_input }
+
+        } else {
+            error "ERROR: run_diff_abund requires one of: run_batch_correction, run_decontam, " +
+                  "start_from=diff_abund, or --decontam_otu_table"
+        }
+
+        // ---- Build level × formula channel ----
+        def level_formula_combos = []
+        params.da_levels.tokenize(',').each { lvl ->
+            if (params.da_formulas) {
+                // Semicolon-separated "name:formula" pairs e.g. "type:Type;type_country:Type+country"
+                params.da_formulas.tokenize(';').each { entry ->
+                    def parts = entry.trim().tokenize(':')
+                    level_formula_combos << [lvl.trim(), parts[0].trim(), parts[1..-1].join(':').trim()]
+                }
+            } else {
+                level_formula_combos << [lvl.trim(), params.da_formula_name, params.da_formula]
+            }
+        }
+        Channel.fromList(level_formula_combos).set { ch_levels_formulas }
+
+        // Combine: (prefix, otu, meta) × (level, model_name, formula)
+        ch_da_input
+            .combine(ch_levels_formulas)
+            .set { ch_da_combined }
+        // ch_da_combined: (prefix, otu, meta, level, model_name, formula)
+
+        // ---- Dispatch to enabled tools ----
+        def ch_concordance_input = Channel.empty()
+
+        if (params.run_maaslin) {
+            MaAsLin(ch_da_combined)
+            ch_concordance_input = ch_concordance_input.mix(MaAsLin.out.results)
+        }
+        if (params.run_ancombc) {
+            ANCOMBC(ch_da_combined)
+            ch_concordance_input = ch_concordance_input.mix(ANCOMBC.out.results)
+        }
+        if (params.run_birdman) {
+            BIRDMAn(ch_da_combined)
+            ch_concordance_input = ch_concordance_input.mix(BIRDMAn.out.results)
+        }
+        if (params.run_qadabra) {
+            Qadabra(ch_da_combined)
+            ch_concordance_input = ch_concordance_input.mix(Qadabra.out.results)
+        }
+
+        // ---- Concordance: group all tool outputs by level_model key ----
+        if (params.run_da_concordance) {
+            ch_concordance_input
+                .groupTuple()
+                .set { ch_concordance_grouped }
+            DAConcordance(ch_concordance_grouped)
+        }
     }
 
 }
