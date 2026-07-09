@@ -24,7 +24,6 @@ process BIRDMAn {
         --level ${level} \\
         --reference ${params.da_reference} \\
         --target ${params.da_target} \\
-        --min_prevalence ${params.da_min_prevalence} \\
-        --threads ${task.cpus}
+        --min_prevalence ${params.da_min_prevalence}
     """
 }

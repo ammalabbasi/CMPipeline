@@ -63,8 +63,6 @@ def parse_args():
     parser.add_argument("--num_iter", type=int, default=500)
     parser.add_argument("--num_warmup", type=int, default=None)
     parser.add_argument("--chains", type=int, default=4)
-    parser.add_argument("--threads", type=int, default=1,
-                        help="Parallel chains per feature (passed to cmdstanpy)")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -133,7 +131,8 @@ def fit_birdman(table, meta, formula, args):
                 chains=args.chains,
                 seed=args.seed,
             )
-            model.fit_model(sampler_args={"parallel_chains": args.threads})
+            model.compile_model()
+            model.fit_model()
             inf = model.to_inference()
 
             summary = az.summary(
