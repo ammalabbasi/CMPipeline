@@ -1,7 +1,9 @@
+nextflow.enable.dsl=2
+
 process mapReads {
 
     scratch true
-    label 'mapBothReads'
+    label 'mapReads'
     publishDir("${params.mapped_reads_dir}", mode: 'copy')
     conda "${params.minimap2_env}"
 

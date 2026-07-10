@@ -1,0 +1,82 @@
+# =============================================================================
+# BATCH CORRECTION AND NORMALIZATION ENVIRONMENT
+# =============================================================================
+#
+# Conda environment for batch correction and normalization of microbiome data
+#
+# Purpose:
+#   - Remove batch effects from microbiome data
+#   - Apply various normalization methods (CLR, rCLR)
+#   - Quality assessment using PERMANOVA
+#
+# Key packages:
+#   - ConQuR: Batch correction for microbiome data (installed via GitHub)
+#   - vegan: PERMANOVA and ecological statistics
+#   - DEICODE: Robust center log-ratio transformation
+#   - zCompositions: Zero replacement methods for compositional data
+#
+# Installation:
+#   conda env create -f batch_correction_env.yml
+#   conda activate nf-batch-correction-env
+#   R -e 'devtools::install_github("wdl2459/ConQuR")'
+#
+# =============================================================================
+
+name: nf-batch-correction-env
+
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # R base
+  - r-base=4.3
+
+  # Compiler toolchain (needed for ConQuR dependencies)
+  - compilers
+  - make
+
+  # Core R packages
+  - r-pacman
+  - r-tidyverse
+  - r-argparse
+  - r-devtools
+
+  # Statistical analysis
+  # Pin vegan to 2.6-4 to avoid adonis deprecation issue (ConQuR uses adonis internally)
+  - r-vegan=2.6.4
+
+  # Parallel processing
+  - r-doparallel
+  - r-foreach
+  - r-iterators
+
+  # Compositional data analysis
+  - r-zcompositions
+
+  # Data manipulation
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-stringr
+
+  # Matrix operations
+  - r-matrix
+
+  # Utilities
+  - r-optparse
+
+  # ConQuR dependencies (pre-install via conda to avoid compilation issues)
+  - r-quantreg
+  - r-glmnet
+  - r-ape
+  - r-gplots
+  - r-randomforest
+  - r-ggrepel
+  - r-rcpp
+  - r-rcpparmadillo
+  - r-rcppeigen
+
+  # Note: ConQuR must be installed separately after environment creation
+  # Run: R -e 'devtools::install_github("wdl2459/ConQuR")'

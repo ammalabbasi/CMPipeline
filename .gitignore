@@ -1,0 +1,51 @@
+# Nextflow runtime
+.nextflow/
+.nextflow.log*
+work/
+
+# Pipeline outputs and large data
+RESULTS/
+databases/
+
+# Sample sheets (site-specific)
+samples.csv
+mag_samplesheet*.csv
+microbial_read_counts.txt
+
+# Batch script logs
+scripts/batch_scripts/log/
+scripts/batch_scripts/*.out
+scripts/batch_scripts/*.err
+
+# Analysis runtime outputs (gitignored directories within analysis/)
+notebooks/
+analysis/out/
+analysis/metadata/
+analysis/ref/
+
+# Presentation and large binary files
+docs/EAC_Microbiome_Presentation.pptx
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# R
+.Rhistory
+.RData
+
+# Backups and swap files
+*.backup
+*.swp
+conf/.base.config.swp
+
+# Decontamination plots (generated outputs)
+decontamination_plots/
+
+# Session logs and tickets
+logs/
+tickets.md
+
+# EggNOG temp dirs
+emappertmp_*/

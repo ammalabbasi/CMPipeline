@@ -1,0 +1,16 @@
+name: da_concordance
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.9
+  - pandas>=1.5
+  - numpy>=1.23
+  - scipy>=1.9
+  - statsmodels>=0.13
+  - arviz>=0.14
+  - matplotlib>=3.6
+  - seaborn>=0.12
+  - pip
+  - pip:
+    - matplotlib-venn>=0.11
