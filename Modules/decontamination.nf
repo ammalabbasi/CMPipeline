@@ -1,31 +1,47 @@
-// Modules/decontamination.nf
+// =============================================================================
+// DECONTAMINATION MODULE
+// =============================================================================
+//
+// Statistical identification and removal of contaminants from microbiome data
+// using the decontam R package
+//
+// =============================================================================
 
 nextflow.enable.dsl=2
 
 process Decontamination {
-    
-    scratch true
-    label 'process_medium'
-    conda "${params.krakenuniq_bracken_env}"
-    
-    label 'process_high_disk'
-    publishDir "${params.krakenuniq_bracken_dir}", mode: 'copy'
-    conda "${params.decontam_env}"
 
-    publishDir "${params.decontam_dir}", mode: 'copy', overwrite: true
+    tag "${prefix}"
+    label 'process_medium'
+
+    conda "${params.decontam_env}"
+    publishDir "${params.decontam_dir}/${prefix}", mode: 'copy', overwrite: true
 
     input:
     tuple val(prefix), path(otu_table), path(metadata)
 
     output:
-    path "${prefix}.*.csv"
+    tuple val(prefix),
+          path("${prefix}.decontam_pkg_decontaminated.csv"),
+          path("decontamination_plots/*"),
+          path("${prefix}.decontamination_summary.txt"), emit: decontaminated
+    tuple val(prefix),
+          path("${prefix}.decontam_pkg_decontaminated.csv"),
+          path(metadata), emit: for_batch_correction
 
     script:
-    def decontam_script = "${projectDir}/scripts/decontamination.R"
     """
-    ${decontam_script} \\
+    Rscript ${params.decontam_script} \\
         --otu_table ${otu_table} \\
         --metadata ${metadata} \\
-        --prefix ${prefix}
+        --prefix ${prefix} \\
+        --threshold ${params.decontam_threshold} \\
+        --min_prevalence ${params.decontam_min_prevalence} \\
+        --min_abundance ${params.decontam_min_abundance} \\
+        --min_batches ${params.decontam_min_batches} \\
+        --batch_column ${params.batch_column} \\
+        --type_column ${params.type_column} \\
+        --tumor_values "${params.tumor_values}" \\
+        --control_values "${params.control_values}"
     """
 }

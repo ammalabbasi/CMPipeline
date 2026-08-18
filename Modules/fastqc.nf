@@ -4,7 +4,7 @@ process FASTQC {
     scratch true
     label 'fastqc'
     publishDir("${params.fastqc_dir}", mode: 'copy')
-    conda "${params.samtools_env}" // Note: This likely should be a fastqc env, not samtools
+    conda "${params.fastqc_env}"
     errorStrategy 'retry'
     maxRetries 3
 

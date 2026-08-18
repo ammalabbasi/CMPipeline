@@ -1,0 +1,11 @@
+name: ancombc-env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.3
+  - bioconductor-ancombc
+  - bioconductor-phyloseq
+  - bioconductor-treesummarizedexperiment
+  - r-tidyverse
+  - r-argparse

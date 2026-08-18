@@ -1,0 +1,53 @@
+# =============================================================================
+# MAASLIN ENVIRONMENT
+# =============================================================================
+#
+# Conda environment for MaAsLin2/3 differential abundance analysis.
+#
+# Setup:
+#   mamba env create -f maaslin_env.yml
+#   conda activate maaslin-env
+#   mamba install -c conda-forge r-nanonext r-mirai r-glmmtmb
+#   R -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
+#   R -e 'BiocManager::install("Maaslin2", update=FALSE, ask=FALSE)'
+#
+# Optional: MaAsLin3 (requires R >= 4.4):
+#   R -e 'devtools::install_github("biobakery/Maaslin3", upgrade="never")'
+#
+# The run_maaslin.R script auto-detects which version is installed.
+#
+# =============================================================================
+
+name: maaslin-env
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  # R base (4.5 for MaAsLin3 compat; MaAsLin2 works with 4.3+)
+  - r-base>=4.4
+
+  # Core R packages
+  - r-tidyverse
+  - r-argparse
+  - r-devtools
+
+  # GLM dependencies
+  - r-glmmtmb
+  - r-lmertest
+
+  # Parallelization (for MaAsLin3)
+  - r-nanonext
+  - r-mirai
+
+  # Statistical
+  - r-pbapply
+  - r-optparse
+  - r-logging
+
+  # Data manipulation
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-stringr

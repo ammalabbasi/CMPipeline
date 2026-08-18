@@ -1,4 +1,24 @@
-# conf/envs/decontam_env.yml
+# =============================================================================
+# DECONTAMINATION ENVIRONMENT
+# =============================================================================
+#
+# Conda environment for microbiome decontamination using the decontam package
+#
+# Purpose:
+#   - Remove contaminants from microbiome data
+#   - Statistical identification of contaminants
+#   - Quality control and visualization
+#
+# Key packages:
+#   - phyloseq: Microbiome data structure and manipulation
+#   - decontam: Contaminant identification
+#   - vegan: Ecological statistics and diversity metrics
+#   - tidyverse: Data manipulation and visualization
+#
+# Installation:
+#   conda env create -f decontam_env.yml
+#
+# =============================================================================
 
 name: nf-decontam-env
 
@@ -8,11 +28,33 @@ channels:
   - defaults
 
 dependencies:
-  - r-base=4.2
+  # R base
+  - r-base=4.3
+
+  # Core R packages
   - r-pacman
   - r-tidyverse
-  - r-ggrepel
-  - r-phyloseq
-  - r-decontam
   - r-argparse
-  - r-devtools # phyloseq 설치 시 필요할 수 있음
+  - r-devtools
+
+  # Visualization
+  - r-ggrepel
+  - r-ggplot2
+  - r-patchwork
+
+  # Microbiome analysis
+  - bioconductor-phyloseq
+  - bioconductor-decontam
+
+  # Statistical analysis
+  - r-vegan
+  - r-mass
+
+  # Data manipulation
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-stringr
+
+  # Utilities
+  - r-optparse
