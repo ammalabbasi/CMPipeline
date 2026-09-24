@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CMPipeline cohort report</title>
+<style>
+:root{
+  --surface:#fcfcfb; --plane:#f9f9f7; --ink:#1a1a19; --ink-2:#4a4a47; --ink-3:#6f6f6a;
+  --rule:#e4e4df; --accent:#2a78d6;
+  --seg-1:#cde2fb; --seg-2:#3987e5; --seg-3:#0d366b; --seg-4:#1baf7a;
+  --warn-bg:#fff6e5; --warn-ink:#7a4b00; --warn-rule:#fab219;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --surface:#1a1a19; --plane:#0d0d0d; --ink:#f2f2ef; --ink-2:#c3c3bd; --ink-3:#8f8f88;
+    --rule:#33332f; --accent:#3987e5;
+    --seg-1:#cde2fb; --seg-2:#6da7ec; --seg-3:#256abf; --seg-4:#199e70;
+    --warn-bg:#2b2410; --warn-ink:#fab219; --warn-rule:#fab219;
+  }
+}
+:root[data-theme="dark"]{
+  --surface:#1a1a19; --plane:#0d0d0d; --ink:#f2f2ef; --ink-2:#c3c3bd; --ink-3:#8f8f88;
+  --rule:#33332f; --accent:#3987e5;
+  --seg-1:#cde2fb; --seg-2:#6da7ec; --seg-3:#256abf; --seg-4:#199e70;
+  --warn-bg:#2b2410; --warn-ink:#fab219; --warn-rule:#fab219;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+.wrap{max-width:1060px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:25px;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:17px;margin:0 0 6px;letter-spacing:-.005em}
+.sub{color:var(--ink-3);margin:0 0 20px;font-size:13px}
+section{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:20px;margin:0 0 18px}
+.lede{color:var(--ink-2);margin:0 0 14px;font-size:13.5px;max-width:74ch}
+.empty{color:var(--ink-3);font-size:13.5px;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;
+  background:var(--rule);padding:1px}
+.tile{background:var(--surface);padding:16px 18px}
+.tile-label{color:var(--ink-3);font-size:11.5px;text-transform:uppercase;
+  letter-spacing:.06em}
+.tile-value{font-size:27px;font-weight:600;letter-spacing:-.02em;margin:4px 0 2px;
+  font-variant-numeric:tabular-nums}
+.tile-note{color:var(--ink-3);font-size:12px}
+.provenance{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;color:var(--ink-2);
+  margin:0 0 14px}
+.provenance strong{color:var(--ink-3);font-weight:500;margin-right:5px}
+.banner{border-radius:8px;padding:11px 14px;font-size:13.5px;margin:0 0 16px}
+.banner.warn{background:var(--warn-bg);color:var(--warn-ink);
+  border:1px solid var(--warn-rule)}
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 14px;font-size:12.5px;
+  color:var(--ink-2)}
+.key{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:11px;height:11px;border-radius:3px;display:inline-block}
+svg{width:100%;height:auto;display:block}
+.cat{font-size:11.5px;fill:var(--ink-2);font-family:ui-monospace,SFMono-Regular,monospace}
+.seg-label{font-size:10.5px;fill:var(--surface);font-weight:600;
+  font-variant-numeric:tabular-nums;pointer-events:none}
+.seg{transition:opacity .12s}
+.seg:hover{opacity:.82}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--rule);
+  white-space:nowrap}
+th{color:var(--ink-3);font-weight:500;font-size:11.5px;text-transform:uppercase;
+  letter-spacing:.05em;text-align:right}
+th:first-child,td:first-child{text-align:left;
+  font-family:ui-monospace,SFMono-Regular,monospace}
+tbody tr:hover{background:var(--plane)}
+footer{color:var(--ink-3);font-size:12px;margin-top:26px;line-height:1.7}
+code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.92em}
+@media (max-width:640px){.wrap{padding:20px 16px 48px}.tile-value{font-size:23px}}
+</style></head>
+<body><div class="wrap">
+<h1>CMPipeline cohort report</h1>
+<p class="sub">Generated 2026-09-24 14:48 UTC · source <code>cmp.qc.summary.tsv</code></p>
+<div class="provenance"><span><strong>Status</strong> started</span><span><strong>Commit</strong> <code>68912d4479d4</code></span><span><strong>Nextflow</strong> 26.04.6</span><span><strong>Started</strong> 2026-09-24T07:31:56-07:00</span></div><div class="banner warn"><strong>Uncommitted changes.</strong> The working tree had 81 modified path(s), so these results are <em>not</em> attributable to that commit.</div>
+<section class="tiles"><div class="tile"><div class="tile-label">Samples</div><div class="tile-value">5</div><div class="tile-note">in this cohort</div></div><div class="tile"><div class="tile-label">Reads entering QC</div><div class="tile-value">233</div><div class="tile-note">all samples; for BAM/CRAM, only the unmapped reads extracted</div></div><div class="tile"><div class="tile-label">Median retention</div><div class="tile-value">58.6%</div><div class="tile-note">of reads entering QC that survive host depletion</div></div><div class="tile"><div class="tile-label">Library records (BAM/CRAM)</div><div class="tile-value">176</div><div class="tile-note">primary records in the input alignments</div></div><div class="tile"><div class="tile-label">Median retention of library</div><div class="tile-value">49.565%</div><div class="tile-note">BAM/CRAM samples: host-depleted reads / primary records</div></div><div class="tile"><div class="tile-label">Cleared the consensus gate</div><div class="tile-value">0 of 5</div><div class="tile-note">eligible for MetaPhlAn</div></div></section>
+<section>
+  <h2>Read retention</h2>
+  <p class="lede">Where each sample's reads went. Segments are percentages of the
+     reads entering host depletion; the final segment is what survived to
+     classification.</p>
+  <div class="legend"><span class="key"><span class="swatch" style="background:var(--seg-1)"></span>Removed: GRCh38</span><span class="key"><span class="swatch" style="background:var(--seg-2)"></span>Removed: T2T + PhiX</span><span class="key"><span class="swatch" style="background:var(--seg-3)"></span>Removed: pangenome</span><span class="key"><span class="swatch" style="background:var(--seg-4)"></span>Retained (microbial candidate)</span></div>
+  <svg viewBox="0 0 770 194" role="img"
+       aria-label="Stacked bar chart of read retention per sample">
+    <text class="cat" x="180" y="45.0" text-anchor="end">itest_bam</text><rect class="seg" x="190.0" y="28" width="17.9" height="26" rx="3" style="fill:var(--seg-1)"><title>itest_bam — Removed: GRCh38: 3.6%</title></rect><rect class="seg" x="209.9" y="28" width="60.0" height="26" rx="3" style="fill:var(--seg-2)"><title>itest_bam — Removed: T2T + PhiX: 11.1%</title></rect><text class="seg-label" x="239.9" y="45.0" text-anchor="middle">11%</text><rect class="seg" x="271.9" y="28" width="476.1" height="26" rx="3" style="fill:var(--seg-4)"><title>itest_bam — Retained (microbial candidate): 85.7%</title></rect><text class="seg-label" x="509.9" y="45.0" text-anchor="middle">86%</text><text class="cat" x="180" y="77.0" text-anchor="end">itest_cram</text><rect class="seg" x="190.0" y="60" width="10.7" height="26" rx="3" style="fill:var(--seg-1)"><title>itest_cram — Removed: GRCh38: 2.3%</title></rect><rect class="seg" x="202.7" y="60" width="50.0" height="26" rx="3" style="fill:var(--seg-2)"><title>itest_cram — Removed: T2T + PhiX: 9.3%</title></rect><text class="seg-label" x="227.7" y="77.0" text-anchor="middle">9%</text><rect class="seg" x="254.7" y="60" width="493.3" height="26" rx="3" style="fill:var(--seg-4)"><title>itest_cram — Retained (microbial candidate): 88.6%</title></rect><text class="seg-label" x="501.3" y="77.0" text-anchor="middle">89%</text><text class="cat" x="180" y="109.0" text-anchor="end">itest_fq1</text><rect class="seg" x="190.0" y="92" width="145.7" height="26" rx="3" style="fill:var(--seg-1)"><title>itest_fq1 — Removed: GRCh38: 27.8%</title></rect><text class="seg-label" x="262.8" y="109.0" text-anchor="middle">28%</text><rect class="seg" x="337.7" y="92" width="100.2" height="26" rx="3" style="fill:var(--seg-2)"><title>itest_fq1 — Removed: T2T + PhiX: 19.2%</title></rect><text class="seg-label" x="387.8" y="109.0" text-anchor="middle">19%</text><rect class="seg" x="439.9" y="92" width="308.1" height="26" rx="3" style="fill:var(--seg-4)"><title>itest_fq1 — Retained (microbial candidate): 58.3%</title></rect><text class="seg-label" x="594.0" y="109.0" text-anchor="middle">58%</text><text class="cat" x="180" y="141.0" text-anchor="end">itest_fq2</text><rect class="seg" x="190.0" y="124" width="144.8" height="26" rx="3" style="fill:var(--seg-1)"><title>itest_fq2 — Removed: GRCh38: 27.6%</title></rect><text class="seg-label" x="262.4" y="141.0" text-anchor="middle">28%</text><rect class="seg" x="336.8" y="124" width="99.3" height="26" rx="3" style="fill:var(--seg-2)"><title>itest_fq2 — Removed: T2T + PhiX: 19.1%</title></rect><text class="seg-label" x="386.5" y="141.0" text-anchor="middle">19%</text><rect class="seg" x="438.1" y="124" width="309.9" height="26" rx="3" style="fill:var(--seg-4)"><title>itest_fq2 — Retained (microbial candidate): 58.6%</title></rect><text class="seg-label" x="593.1" y="141.0" text-anchor="middle">59%</text><text class="cat" x="180" y="173.0" text-anchor="end">itest_thin</text><rect class="seg" x="190.0" y="156" width="371.4" height="26" rx="3" style="fill:var(--seg-1)"><title>itest_thin — Removed: GRCh38: 66.7%</title></rect><text class="seg-label" x="375.7" y="173.0" text-anchor="middle">67%</text><rect class="seg" x="563.4" y="156" width="184.6" height="26" rx="3" style="fill:var(--seg-4)"><title>itest_thin — Retained (microbial candidate): 33.3%</title></rect><text class="seg-label" x="655.7" y="173.0" text-anchor="middle">33%</text>
+  </svg>
+</section>
+<section>
+  <h2>Filtering and depletion</h2>
+  <p class="lede">Per-sample read accounting. <code>Adapter scan</code> records whether the 234-sequence FASTA was used for that sample — <code>--adapter_trim auto</code> skips it for reads extracted from an alignment.</p>
+  <div class="scroll"><table><thead><tr><th>Sample</th><th>Library (BAM/CRAM)</th><th>Reads into QC</th><th>After fastp</th><th>Pass %</th><th>Dup.</th><th>Adapter scan</th><th>Host depleted</th><th>Retained %</th></tr></thead>
+    <tbody><tr><td>itest_bam</td><td>99</td><td>56</td><td>56</td><td>100.0%</td><td>0.000</td><td>false</td><td>48</td><td>85.7%</td></tr><tr><td>itest_cram</td><td>77</td><td>44</td><td>44</td><td>100.0%</td><td>0.000</td><td>false</td><td>39</td><td>88.6%</td></tr><tr><td>itest_fq1</td><td>—</td><td>72</td><td>72</td><td>100.0%</td><td>0.000</td><td>true</td><td>42</td><td>58.3%</td></tr><tr><td>itest_fq2</td><td>—</td><td>58</td><td>58</td><td>100.0%</td><td>0.000</td><td>true</td><td>34</td><td>58.6%</td></tr><tr><td>itest_thin</td><td>—</td><td>3</td><td>3</td><td>100.0%</td><td>0.000</td><td>false</td><td>1</td><td>33.3%</td></tr></tbody></table></div>
+</section>
+<section>
+  <h2>Classification and profiler agreement</h2>
+  <p class="lede"><code>Microbial reads</code> is the KrakenUniq <code>root</code> clade count, i.e. the reads classified at all — the same quantity <code>--consensus_min_reads</code> gates on. A sample below the gate has no MetaPhlAn profile, so its MetaPhlAn and shared columns read &mdash;. <code>Shared</code> is the per-sample intersection of the two profilers.</p>
+  <div class="scroll"><table><thead><tr><th>Sample</th><th>Microbial reads</th><th>Cleared gate</th><th>Bracken genera</th><th>MetaPhlAn genera</th><th>Shared genera</th><th>Bracken species</th><th>MetaPhlAn species</th><th>Shared species</th></tr></thead>
+    <tbody><tr><td>itest_bam</td><td>48</td><td>false</td><td>3</td><td>—</td><td>—</td><td>4</td><td>—</td><td>—</td></tr><tr><td>itest_cram</td><td>39</td><td>false</td><td>3</td><td>—</td><td>—</td><td>4</td><td>—</td><td>—</td></tr><tr><td>itest_fq1</td><td>42</td><td>false</td><td>2</td><td>—</td><td>—</td><td>3</td><td>—</td><td>—</td></tr><tr><td>itest_fq2</td><td>34</td><td>false</td><td>3</td><td>—</td><td>—</td><td>3</td><td>—</td><td>—</td></tr><tr><td>itest_thin</td><td>1</td><td>false</td><td>0</td><td>—</td><td>—</td><td>0</td><td>—</td><td>—</td></tr></tbody></table></div>
+</section>
+<section><h2>Consensus: Bracken pass-through</h2><p class="lede"><b>No MetaPhlAn cross-check was possible</b> (0 sample(s) cleared the MetaPhlAn gate (&gt;= 100000 KrakenUniq root reads), 0 also profiled by MetaPhlAn; consensus needs &gt;= 2), so the Bracken tables went downstream unfiltered. Treat taxon calls accordingly.</p></section>
+<section>
+  <h2>Decontamination roles</h2>
+  <p class="lede">Which samples were treated as positives and which as negative controls. Empty unless decontamination ran.</p>
+  <div class="scroll"><table><thead><tr><th>Sample</th><th>Sample type</th><th>Role</th><th>Status</th></tr></thead>
+    <tbody><tr><td>itest_bam</td><td>Tumor</td><td>positive</td><td>included</td></tr><tr><td>itest_cram</td><td>Tumor</td><td>positive</td><td>included</td></tr><tr><td>itest_fq1</td><td>Blood</td><td>control</td><td>included</td></tr><tr><td>itest_fq2</td><td>Blood</td><td>control</td><td>included</td></tr><tr><td>itest_thin</td><td>Tumor</td><td>NA</td><td>excluded</td></tr></tbody></table></div>
+</section>
+
+<footer>
+  Every number here comes from <code>cmp.qc.summary.tsv</code>; this page
+  does not re-read the results tree, so the two cannot disagree.<br>
+  Counts and rates only — no sequence and no clinical value. The page does carry
+  per-sample identifiers, so treat it as a sample-level table.<br>
+  Colour encodes ordered depletion stages; every segment is labelled and repeated in the
+  tables, so nothing depends on colour alone.
+</footer>
+</div></body></html>

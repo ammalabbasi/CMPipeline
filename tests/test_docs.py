@@ -1,6 +1,9 @@
-"""The README documents every parameter main.nf defines, and has not drifted back (audit A17/C18).
+"""The docs (README.md + docs/**/*.md) document every parameter main.nf defines, and have not
+drifted back (audit A17/C18).
 
-Parses every `params.<name> =` assignment in main.nf and asserts the README mentions `--<name>`.
+Since 2026-09-24 the README is a short front page (pksProfiler layout) and the detail lives in
+docs/running/*.md, docs/hpc.md, docs/outputs.md and docs/parameters.md; the checks read all of them.
+Parses every `params.<name> =` assignment in main.nf and asserts the docs mention `--<name>`.
 A parameter added to main.nf without a README line fails here, which is how today's decontam and
 batch-correction parameters went undocumented. Also pins a few statements the audit found wrong.
 """
@@ -11,6 +14,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_NF = ROOT / "main.nf"
 README = ROOT / "README.md"
+DOCS = [README, *sorted((ROOT / "docs").rglob("*.md"))]
+
+
+def docs_text():
+    return "\n".join(p.read_text() for p in DOCS)
 
 # Parameters deliberately NOT documented in the README. Each entry needs a reason.
 # Empty on purpose (audit A17): every param in main.nf, including the internal script/env/dir
@@ -35,11 +43,26 @@ class ReadmeDocumentsEveryParam(unittest.TestCase):
             self.assertIn(name, found)
 
     def test_every_param_is_in_readme(self):
-        readme = README.read_text()
+        readme = docs_text()
         missing = [n for n in main_nf_params()
                    if n not in UNDOCUMENTED_OK
                    and not re.search(r"--" + re.escape(n) + r"(?![A-Za-z0-9_])", readme)]
-        self.assertEqual(missing, [], "params in main.nf with no --<name> in README.md")
+        self.assertEqual(missing, [], "params in main.nf with no --<name> in README.md or docs/")
+
+    def test_parameter_reference_is_complete(self):
+        """docs/parameters.md is the one table listing every parameter."""
+        ref = (ROOT / "docs" / "parameters.md").read_text()
+        missing = [n for n in main_nf_params() if f"`--{n}`" not in ref]
+        self.assertEqual(missing, [], "params missing from docs/parameters.md")
+
+    def test_readme_links_resolve(self):
+        import re as _re
+        for p in DOCS:
+            for target in _re.findall(r"\]\(([^)#:]+)\)", p.read_text()):
+                with self.subTest(doc=p.name, link=target):
+                    self.assertTrue((p.parent / target).exists(), f"{p.name} links to missing {target}")
+        self.assertIn('src="workflow_logo/v0.2.png"', README.read_text())
+        self.assertTrue((ROOT / "workflow_logo" / "v0.2.png").exists())
 
     def test_allow_list_is_not_stale(self):
         stale = sorted(set(UNDOCUMENTED_OK) - set(main_nf_params()))
@@ -51,7 +74,7 @@ class ReadmeMatchesCode(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.readme = README.read_text()
+        cls.readme = docs_text()
         cls.main = MAIN_NF.read_text()
 
     def test_unevaluable_default_is_skip(self):
