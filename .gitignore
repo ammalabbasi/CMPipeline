@@ -49,3 +49,27 @@ tickets.md
 
 # EggNOG temp dirs
 emappertmp_*/
+
+# Per-checkout notes; deliberately untracked (see CLAUDE.local.md)
+CLAUDE.local.md
+
+# Launcher logs from ad hoc runs
+*.launcher.log
+
+# Conda environment cache (conda.cacheDir)
+.conda_cache/
+
+# macOS AppleDouble resource forks (arrive with files synced from a Mac)
+._*
+.DS_Store
+
+# Alignment-validation reference cache (downloaded public genomes + .mmi; params.validation_cache_dir)
+.validation_cache/
+.pytest_cache/
+# Env-build and database-fetch job logs
+conda_envs/*.log
+# Header-only traces from ad hoc runs
+trace-*.txt
+
+# Launch-dir execution records: trace/report/timeline carry task tags, i.e. sample IDs
+pipeline_info/

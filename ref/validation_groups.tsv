@@ -1,0 +1,9 @@
+# Taxa scored as ONE taxon by alignment validation (--validation_groups). No read-level method
+# separates these: Shigella is phylogenetically nested within E. coli. Names must match the
+# Kraken/Bracken species names exactly. One member per line.
+group	member
+Escherichia/Shigella	Escherichia coli
+Escherichia/Shigella	Shigella flexneri
+Escherichia/Shigella	Shigella sonnei
+Escherichia/Shigella	Shigella boydii
+Escherichia/Shigella	Shigella dysenteriae

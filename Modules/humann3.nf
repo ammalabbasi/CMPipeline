@@ -1,15 +1,25 @@
 nextflow.enable.dsl=2
 
 process humann3 {
-    tag "${SAMPLE_NAME}"
+    label 'per_sample'   // --sample_failure_strategy (audit C10)
+    tag "${sampleID}"
     label 'process_high'
     scratch true
     publishDir "${params.humann3_dir}", mode: 'copy'
     conda "${params.humann3_env}"
 
     input:
-    tuple path(r1_fastq), path(r2_fastq)
+    // `taxonomic_profile` is MetaPhlAn's output for this sample, staged in by the
+    // workflow, or an empty list for samples MetaPhlAn was not run on. It used to be
+    // read straight out of the published RESULTS/METAPHLAN4 directory, which raced
+    // with the metaphlan4 process running on the same channel: whether HUMAnN3 reused
+    // a profile or recomputed one depended on task timing.
+    tuple val(sampleID), path(reads), path(taxonomic_profile)
 
+    // Digests of the helper scripts / references this task uses (Provenance.code/.data). A val
+    // input, so editing a script or swapping a reference invalidates -resume for exactly the
+    // dependent tasks; embedding it in the script text does NOT (verified 2026-09-23, audit C03).
+    val deps
     output:
     tuple path("*_genefamilies.tsv"),
           path("*_pathabundance.tsv"),
@@ -17,45 +27,31 @@ process humann3 {
 
     script:
     // Define the sample name from the input file name
-    def SAMPLE_NAME = r1_fastq.baseName.split('\\.')[0]
+    def SAMPLE_NAME = sampleID
+    def read_files = reads instanceof Collection ? reads : [reads]
+    def inputs = read_files.collect { "\"${it}\"" }.join(' ')
+    def profile_arg = taxonomic_profile ? "--taxonomic-profile \"${taxonomic_profile}\"" : ""
 
     """
     out1="${SAMPLE_NAME}_genefamilies.tsv"
     out2="${SAMPLE_NAME}_pathabundance.tsv"
     out3="${SAMPLE_NAME}_pathcoverage.tsv"
 
-    # Skip condition
-    if [[ -f "${params.humann3_dir}/\$out1" && -f "${params.humann3_dir}/\$out2" && -f "${params.humann3_dir}/\$out3" ]]; then
-        echo "Skipping humann3: Found \$out1, \$out2, \$out3 in publishDir"
-        for f in "\$out1" "\$out2" "\$out3"; do
-            if [[ ! -f "\$f" ]]; then
-                ln -s "${params.humann3_dir}/\$f" . 2>/dev/null || cp "${params.humann3_dir}/\$f" .
-            fi
-        done
-        exit 0
-    fi
-
     # Concatenate and decompress R1 and R2 fastq files in one pass
-    zcat ${r1_fastq} ${r2_fastq} > ${SAMPLE_NAME}_combined.fastq
+    gzip -dc ${inputs} > ${SAMPLE_NAME}_combined.fastq
 
-    # Check for existing MetaPhlAn profile (avoids redundant MetaPhlAn run)
-    TAXONOMIC_PROFILE_OPT=""
-    if [[ -f "${params.metaphlan4_dir}/${SAMPLE_NAME}.profiled_metagenome.txt" ]]; then
-        echo "Using existing MetaPhlAn profile from ${params.metaphlan4_dir}"
-        TAXONOMIC_PROFILE_OPT="--taxonomic-profile ${params.metaphlan4_dir}/${SAMPLE_NAME}.profiled_metagenome.txt"
-    fi
 
     # Run HUMAnN3
     humann --input ${SAMPLE_NAME}_combined.fastq \\
         --search-mode uniref90 \\
         --nucleotide-database ${params.humann3_nucleotide_db} \\
         --protein-database ${params.humann3_protein_db} \\
-        --metaphlan-options "--bowtie2db ${params.metaphlan_db} -x mpa_vJun23_CHOCOPhlAnSGB_202307" \\
+        --metaphlan-options "--bowtie2db ${params.metaphlan_db} -x ${params.metaphlan_index}" \\
         --output . \\
         --output-basename ${SAMPLE_NAME} \\
         --threads ${task.cpus} \\
         --input-format fastq \\
-        \$TAXONOMIC_PROFILE_OPT
+        ${profile_arg}
 
     # Clean up temp directory
     rm -rf ${SAMPLE_NAME}_humann_temp

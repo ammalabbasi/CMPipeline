@@ -1,0 +1,11 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: linux-64
+@EXPLICIT
+https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_5.conda#af44890f8a2beefd3a83805a59a65014
+https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda#a9f577daf3de00bca7c3c76c0ecbd1de
+https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_5.conda#3b62b92f0f082b67c59618ebf07617a7
+https://conda.anaconda.org/conda-forge/linux-64/isa-l-2.32.1-hb03c661_0.conda#aee2e139304e7b59d3369222bb9eb288
+https://conda.anaconda.org/conda-forge/linux-64/libdeflate-1.26-h351257e_0.conda#d0c17fc12939a990f0865b7a14b49cfe
+https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_5.conda#75b43a2912a0354204696708e4f34b8d
+https://conda.anaconda.org/bioconda/linux-64/fastp-0.24.0-heae3180_1.tar.bz2#d9658b74d55bc6bfdb708a553a45a50d

@@ -1,82 +1,47 @@
-# =============================================================================
-# BATCH CORRECTION AND NORMALIZATION ENVIRONMENT
-# =============================================================================
-#
-# Conda environment for batch correction and normalization of microbiome data
-#
-# Purpose:
-#   - Remove batch effects from microbiome data
-#   - Apply various normalization methods (CLR, rCLR)
-#   - Quality assessment using PERMANOVA
-#
-# Key packages:
-#   - ConQuR: Batch correction for microbiome data (installed via GitHub)
-#   - vegan: PERMANOVA and ecological statistics
-#   - DEICODE: Robust center log-ratio transformation
-#   - zCompositions: Zero replacement methods for compositional data
-#
-# Installation:
-#   conda env create -f batch_correction_env.yml
-#   conda activate nf-batch-correction-env
-#   R -e 'devtools::install_github("wdl2459/ConQuR")'
-#
-# =============================================================================
-
-name: nf-batch-correction-env
-
+# Batch correction (ConQuR) + normalisation. Versions pinned to the 2026-09-23 build. The exact
+# build is conda_envs/lock/batch_correction_env.linux-64.txt. ConQuR's CRAN dependencies now come
+# from conda-forge (audit D03): previously 28 of them were installed from CRAN at whatever version
+# CRAN served. Two things remain outside conda, installed by scripts/install_conqur.R at EXACT
+# versions: cqrReg 1.2.1 (not on conda-forge) and ConQuR itself (ivartb/ConQuR_par@ff233085).
+# ConQuR is the ivartb/ConQuR_par fork, not the upstream ConQuR repository, at the commit in
+# params.conqur_sha (main.nf); Modules/batch_correction.nf refuses any other install (audit A14/A17).
+# Change the pin in main.nf and scripts/install_conqur.R together (tests/test_docs.py checks).
+# Nextflow does not build this env: params.batch_corr_env points at a pre-built env with ConQuR
+# installed (conda_envs/build_envs.sbatch), because a fresh build would lack it (audit D04).
+name: batch_correction_env
 channels:
   - conda-forge
   - bioconda
-  - defaults
-
+  - nodefaults
 dependencies:
-  # R base
-  - r-base=4.3
-
-  # Compiler toolchain (needed for ConQuR dependencies)
-  - compilers
-  - make
-
-  # Core R packages
-  - r-pacman
-  - r-tidyverse
-  - r-argparse
-  - r-devtools
-
-  # Statistical analysis
-  # Pin vegan to 2.6-4 to avoid adonis deprecation issue (ConQuR uses adonis internally)
-  - r-vegan=2.6.4
-
-  # Parallel processing
-  - r-doparallel
-  - r-foreach
-  - r-iterators
-
-  # Compositional data analysis
-  - r-zcompositions
-
-  # Data manipulation
-  - r-dplyr
-  - r-tidyr
-  - r-readr
-  - r-stringr
-
-  # Matrix operations
-  - r-matrix
-
-  # Utilities
-  - r-optparse
-
-  # ConQuR dependencies (pre-install via conda to avoid compilation issues)
-  - r-quantreg
-  - r-glmnet
-  - r-ape
-  - r-gplots
-  - r-randomforest
-  - r-ggrepel
-  - r-rcpp
-  - r-rcpparmadillo
-  - r-rcppeigen
-
-  # Note: ConQuR must be installed separately after environment creation
-  # Run: R -e 'devtools::install_github("wdl2459/ConQuR")'
+  # Every package pinned (audit D03): the unpinned ones took the versions in
+  # lock/batch_correction_env.linux-64.txt, the env the pipeline was verified with.
+  - r-base=4.3.3
+  - compilers=2.0.0
+  - make=4.4.1
+  - r-tidyverse=2.0.0
+  - r-argparse=2.2.5
+  - r-remotes=2.5.0
+  - r-vegan=2.6_4            # 2.6-4: ConQuR calls adonis, removed in later vegan
+  - r-doparallel=1.0.17
+  - r-foreach=1.5.2
+  - r-iterators=1.0.14
+  - r-zcompositions=1.5.0_5
+  - r-dplyr=1.1.4
+  - r-optparse=1.7.5
+  - r-matrix=1.6_5
+  # ConQuR imports (DESCRIPTION): quantreg cqrReg glmnet dplyr doParallel gplots vegan ade4
+  # compositions randomForest ROCR ape GUniFrac fastDummies
+  - r-quantreg=6.1
+  - r-glmnet=4.1_10
+  - r-gplots=3.2.0
+  - r-randomforest=4.7_1.2
+  - r-ape=5.8_1
+  - r-ade4=1.7_23
+  - r-compositions=2.0_9
+  - r-rocr=1.0_11
+  - r-gunifrac=1.9
+  - r-fastdummies=1.7.5
+  - r-inline=0.3.21
+  - r-rcpp=1.1.0
+  - r-rcpparmadillo=15.0.2_1
