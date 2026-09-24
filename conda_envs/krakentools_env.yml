@@ -1,6 +1,0 @@
-name: krakentools_env
-channels:
-  - conda-forge
-  - bioconda
-  - defaults
-prefix: /tscc/projects/ps-lalexandrov/amabbasi/anaconda3/envs/krakentools_env

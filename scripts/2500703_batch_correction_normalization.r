@@ -33,48 +33,26 @@
 
 # ==============================================================================
 
+# Everything comes from conda_envs/batch_correction_env.yml plus scripts/install_conqur.R (the
+# pinned ivartb/ConQuR_par fork). Nothing is installed at run time: the earlier block installed
+# pacman/BiocManager/devtools, an unpinned ConQuR and "DEICODE" (a Python package) on every run,
+# which silently changed the software between runs (audit A14/D03, 2026-09-23).
 suppressPackageStartupMessages({
-  if (!requireNamespace("pacman", quietly = TRUE))
-      install.packages("pacman", repos = "https://cloud.r-project.org")
-  if (!requireNamespace("BiocManager", quietly = TRUE))
-      install.packages("BiocManager", repos = "https://cloud.r-project.org")
-  if (!requireNamespace("devtools", quietly = TRUE))
-      install.packages("devtools", repos = "https://cloud.r-project.org")
-
-  # Install ConQuR from GitHub if not available
-  # Use ivartb/ConQuR_par fork which fixes the "batchid not found" error in foreach workers
-  if (!requireNamespace("ConQuR", quietly = TRUE)) {
-    message("INFO: Installing ConQuR (ivartb/ConQuR_par fork with batchid fix) from GitHub...")
-    tryCatch({
-      devtools::install_github("ivartb/ConQuR_par", quiet = TRUE, upgrade = "never")
-    }, error = function(e) {
-      message("INFO: Falling back to original ConQuR...")
-      devtools::install_github("wdl2459/ConQuR", quiet = TRUE, upgrade = "never")
-    })
-  }
-
-  pacman::p_load(tidyverse, vegan, ConQuR, argparse,
-               zCompositions, devtools,
-               doParallel, foreach, iterators) 
-
-  ## DEICODE (for RCLR)
-  if (!requireNamespace("DEICODE", quietly = TRUE)) {
-    try(BiocManager::install("DEICODE", update = FALSE, ask = FALSE), silent = TRUE)
-    if (!requireNamespace("DEICODE", quietly = TRUE))
-      try(devtools::install_github("DEICODE-dev/DEICODE", quiet = TRUE), silent = TRUE)
-  }
-  if (requireNamespace("DEICODE", quietly = TRUE)) {
-    library(DEICODE);  rclr_f <- DEICODE::rclr
-  } else {
-    message("WARN: DEICODE unavailable — using manual RCLR")
-    rclr_f <- function(mat){
-      t(apply(mat, 1, function(x){
-        nz <- x>0; g <- exp(mean(log(x[nz]))); y <- rep(NA, length(x))
-        y[nz] <- log(x[nz]/g); y
-      }))
-    }
+  for (pkg in c("tidyverse", "vegan", "ConQuR", "argparse", "zCompositions",
+                "doParallel", "foreach", "iterators")) {
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop("ERROR: R package '", pkg, "' is missing from the batch-correction environment. ",
+           "Rebuild the env from conda_envs/batch_correction_env.yml and run scripts/install_conqur.R.")
+    library(pkg, character.only = TRUE)
   }
 })
+## RCLR: DEICODE is a Python package, never available here; this is the implementation used.
+rclr_f <- function(mat){
+  t(apply(mat, 1, function(x){
+    nz <- x>0; g <- exp(mean(log(x[nz]))); y <- rep(NA, length(x))
+    y[nz] <- log(x[nz]/g); y
+  }))
+}
 
 # ---------- Utility functions -------------------------------------------------
 save_table <- function(df, path){
@@ -143,6 +121,10 @@ load_and_prepare_data <- function(otu_path, meta_path) {
   taxon_name_candidates <- c("species_name", "name", "X", "species", "taxon",
                              "taxa", "clade_name", "Taxon", "Species",
                              "organism", "OTU", "ASV", "#OTU ID", "OTUID")
+  # The declared column wins (audit C09); guessing stays only for standalone use.
+  if (!is.null(args$taxon_column) && nzchar(args$taxon_column) && args$taxon_column %in% colnames(otu_raw)) {
+    taxon_name_candidates <- args$taxon_column
+  }
   name_col <- taxon_name_candidates[taxon_name_candidates %in% colnames(otu_raw)][1]
 
   # 후보에서 찾지 못했으면 첫 번째 non-numeric 컬럼 사용
@@ -169,8 +151,16 @@ load_and_prepare_data <- function(otu_path, meta_path) {
     as.data.frame()
   
   original_sample_count <- nrow(otu_data)
+  dropped <- rownames(otu_data)[rowSums(otu_data) == 0]
   otu_data <- otu_data[rowSums(otu_data) > 0, ]
   cat("INFO: Removed", original_sample_count - nrow(otu_data), "empty samples.\n")
+  # Decontam keeps all-zero samples as evidence of absence; batch correction cannot use them.
+  # Record them rather than leaving the change to the log (audit A08).
+  assign("dropped_empty_samples", dropped, envir = globalenv())
+  write.table(data.frame(sample = dropped, status = rep("dropped", length(dropped)),
+                         reason = rep("all-zero after decontamination", length(dropped))),
+              file.path(dirname(args$prefix), "batch_correction_sample_status.tsv"),
+              sep = "\t", quote = FALSE, row.names = FALSE)
 
   # Sample ID normalization - remove common suffixes from OTU sample IDs
   cat("\nINFO: Normalizing sample IDs...\n")
@@ -195,6 +185,14 @@ load_and_prepare_data <- function(otu_path, meta_path) {
   sample_id_candidates <- c("donor_id", "sample_id", "sampleid", "Sample.ID", "Sample_ID",
                             "SampleID", "Sample ID", "SAMPLE_ID", "Sample ID_x",
                             "subject_id", "SubjectID", "Subject_ID", "patient", "Patient")
+  # The pipeline passes the SAME columns decontam used (audit C09); guessing from candidate lists
+  # is kept only for standalone use of this script.
+  if (!is.null(args$sample_id_column) && nzchar(args$sample_id_column)) {
+    if (!(args$sample_id_column %in% colnames(meta_raw)))
+      stop("ERROR: --sample_id_column '", args$sample_id_column, "' is not in the metadata (columns: ",
+           paste(colnames(meta_raw), collapse = ", "), ")")
+    sample_id_candidates <- args$sample_id_column
+  }
   sample_id_col <- sample_id_candidates[sample_id_candidates %in% colnames(meta_raw)][1]
 
   if(is.na(sample_id_col)) {
@@ -207,12 +205,24 @@ load_and_prepare_data <- function(otu_path, meta_path) {
 
   # sample_id로 컬럼명 표준화
   if(sample_id_col != "sample_id") {
+    # A metadata file can carry its own 'sample_id' column next to the declared one; keep it under
+    # another name instead of crashing in rename() with a duplicate column (audit C09).
+    if ("sample_id" %in% colnames(meta_raw)) {
+      meta_raw <- meta_raw %>% rename(sample_id_original = sample_id)
+      cat("INFO: existing 'sample_id' column kept as 'sample_id_original'; joining on '", sample_id_col, "'\n", sep = "")
+    }
     meta_raw <- meta_raw %>% rename(sample_id = !!sym(sample_id_col))
   }
 
   # Sample Type 처리: 여러 가능한 컬럼명 지원
   type_candidates <- c("Type", "type", "Sample Type_x", "Sample_Type", "sample_type",
                        "cohort", "Cohort", "group", "Group", "condition", "Condition")
+  if (!is.null(args$type_column) && nzchar(args$type_column) && args$type_column %in% colnames(meta_raw)) {
+    type_candidates <- args$type_column
+  } else if (!is.null(args$type_column) && nzchar(args$type_column) && !identical(args$type_column, "Type")) {
+    stop("ERROR: --type_column '", args$type_column, "' is not in the metadata (columns: ",
+         paste(colnames(meta_raw), collapse = ", "), ")")
+  }
   type_col <- type_candidates[type_candidates %in% colnames(meta_raw)][1]
 
   if(!is.na(type_col) && type_col != "Type") {
@@ -223,10 +233,13 @@ load_and_prepare_data <- function(otu_path, meta_path) {
     meta_raw$Type <- "Sample"
   }
 
+  # Duplicate IDs are refused, not silently kept-first: which row "wins" would decide a sample's
+  # batch and covariates (audit C09).
   if (any(duplicated(meta_raw$sample_id))) {
     dup_ids <- unique(meta_raw$sample_id[duplicated(meta_raw$sample_id)])
-    cat("WARN:", length(dup_ids), "duplicate sample_ids. Keeping first occurrence.\n")
-    meta_raw <- meta_raw[!duplicated(meta_raw$sample_id), ]
+    write_status("failed", paste0(length(dup_ids), " duplicate sample ID(s) in the metadata"))
+    stop("ERROR: ", length(dup_ids), " sample ID(s) appear more than once in the metadata column '",
+         sample_id_col, "' (first: ", paste(head(dup_ids, 5), collapse = ", "), "). Deduplicate it first.")
   }
 
   common_samples <- intersect(rownames(otu_data), meta_raw$sample_id)
@@ -302,8 +315,19 @@ run_permanova <- function(mat, meta, rhs_formula, dist_meth){
   if (anyNA(mat[smp, ])) mat[smp, ][is.na(mat[smp, ])] <- 0
   mat <- mat[ , colSums(mat) > 0, drop = FALSE]
   dist <- vegdist(mat[smp, ], dist_meth)
-  res  <- adonis2(dist ~ ., data = meta[smp, all.vars(rhs_formula)],
-                  permutations = 999, by = "margin")
+  # drop = FALSE: with ONE predictor (batch only -- `--covariates none`, or every covariate
+  # filtered out) `[` returned a vector and adonis2 failed "'.' in formula and no 'data' argument".
+  pdat <- meta[smp, all.vars(rhs_formula), drop = FALSE]
+  # by = "margin" can fail when a strong correction makes the Bray batch sum of squares negative
+  # (audit A12). Fall back to sequential terms with batch entered LAST (so its R2 is still the
+  # batch effect after covariates), and say so, rather than crashing a successful correction.
+  res <- tryCatch(
+    adonis2(dist ~ ., data = pdat, permutations = 999, by = "margin"),
+    error = function(e) {
+      cat("WARN: PERMANOVA by='margin' failed (", conditionMessage(e), "); using by='terms' with batch last\n")
+      vars <- all.vars(rhs_formula); vars <- c(setdiff(vars, vars[1]), vars[1])
+      adonis2(reformulate(vars, response = "dist"), data = pdat, permutations = 999, by = "terms")
+    })
   as_tibble(res, rownames = "Term") %>% dplyr::select(Term, Df, R2, `Pr(>F)`)
 }
 
@@ -690,9 +714,10 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
   valid_covars <- covars[keep_covars]
   
   if (length(valid_covars) == 0) {
-    cat("\nWARN: No valid covariates after batch-level filtering\n")
-    cat("  Continuing WITHOUT covariates\n\n")
-    final_covars <- NULL
+    # Every covariate was constant within some batch. ConQuR cannot run on batch alone (audit A02).
+    return(list(success = FALSE, message = paste0(
+      "no covariate varies within every batch (requested: ", paste(covars, collapse = ", "),
+      "); ConQuR needs >= 1")))
   } else {
     cat("INFO: Using", length(valid_covars), "covariate(s):", 
         paste(valid_covars, collapse=", "), "\n\n")
@@ -1061,17 +1086,45 @@ parser$add_argument("--type_column", type = "character", default = "Type",
                    help = "Name of the column in metadata that specifies sample type for tumor filtering (default: Type)")
 parser$add_argument("--tumor_value", type = "character", default = "Tumor",
                    help = "Comma-separated list of values to recognize as tumor samples (default: Tumor). Case-insensitive matching.")
+parser$add_argument("--taxon_column", type = "character", default = NULL,
+                    help = "OTU-table column holding taxon names (the pipeline passes params.taxon_column)")
+parser$add_argument("--sample_id_column", type = "character", default = NULL,
+                    help = "metadata column holding sample IDs (the pipeline passes decontam's)")
+parser$add_argument("--allow_uncorrected", action = "store_true", default = FALSE,
+                    help = "on failure, continue with raw counts saved as UNCORRECTED_passthrough.tsv")
 parser$add_argument("--method", type = "character", default = "tune",
                    help = "Correction method: 'tune' (default, auto-phased Tune_ConQuR) or 'vanilla' (default ConQuR)")
 args <- parser$parse_args()
+if (!(args$method %in% c("tune", "vanilla")))
+  stop("ERROR: --method must be 'tune' or 'vanilla' (got '", args$method, "')")
 
 dir.create(dirname(args$prefix), showWarnings = FALSE, recursive = TRUE)
 corr_dir <- file.path(dirname(args$prefix), "corrected"); dir.create(corr_dir, showWarnings=FALSE)
+# One status file per run, whatever happens: corrected | failed, with the reason and sample count.
+write_status <- function(status, reason) {
+  n <- if (exists("otu_raw", inherits = TRUE)) nrow(get("otu_raw", inherits = TRUE)) else NA
+  n_dropped <- if (exists("dropped_empty_samples", inherits = TRUE)) length(get("dropped_empty_samples", inherits = TRUE)) else NA
+  write.table(data.frame(status = status, reason = reason, n_samples = n, n_empty_samples_dropped = n_dropped),
+              file.path(corr_dir, "BATCH_CORRECTION_STATUS.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+}
 norm_dir <- file.path(dirname(args$prefix), "normalized"); dir.create(norm_dir, showWarnings=FALSE)
 plot_dir <- file.path(dirname(args$prefix), "pcoa_plots"); dir.create(plot_dir, showWarnings=FALSE)
 
 # Parse covariates (comma-separated string to vector)
 covariate_vector <- trimws(unlist(strsplit(args$covariates, ",")))
+# "none" (or empty) stops the run: ConQuR needs >= 1 covariate (audit A02). A named covariate
+# missing from the metadata also stops the run below. A covariate that is constant within any
+# batch is dropped before ConQuR runs, with a WARN in tune mode (see run_auto_phase).
+if (length(covariate_vector) == 0 || identical(tolower(covariate_vector), "none")) {
+  # ConQuR builds its model from covariates + batch and cannot run on batch alone (audit A02).
+  # Decided 2026-09-23 (Ammal): fail loudly rather than guess or pass raw counts off as corrected.
+  write_status("failed", "no covariates requested (--covariates none); ConQuR needs >= 1 covariate that varies within batches")
+  stop("ERROR: ConQuR needs >= 1 covariate that varies within batches; --covariates none cannot be batch-corrected.")
+}
+if (!identical(args$phase, "auto")) {
+  # run_auto_phase always runs phase 1 then (if needed) phase 3; forcing a phase was never wired.
+  stop("ERROR: --phase '", args$phase, "' is not implemented; only 'auto' is (audit A11).")
+}
 cat("INFO: Using batch column:", args$batch_column, "\n")
 cat("INFO: Using covariates:", paste(covariate_vector, collapse = ", "), "\n")
 if (args$tumor_only) {
@@ -1167,6 +1220,7 @@ if (file.exists(cache_file)) {
   
   if (result$success) {
     tables$ConQuR_tuned <- result$data
+    write_status("corrected", "ConQuR completed")
     
     # Save results
     save_table(result$data, cache_file)
@@ -1207,9 +1261,17 @@ if (file.exists(cache_file)) {
     cat("Reason:", ifelse(is.null(result$message), "Unknown error", result$message), "\n")
     cat(strrep("!", 70), "\n\n")
 
-    # Save uncorrected data for pipeline continuity
-    tables$ConQuR_tuned <- otu_raw
-    save_table(otu_raw, cache_file)
+    # Never publish raw counts as ConQuR_tuned.tsv (audit A01): record the failure and stop,
+    # unless --allow_uncorrected, in which case the raw table is saved under an honest name.
+    reason <- ifelse(is.null(result$message), "Unknown error", result$message)
+    write_status("failed", reason)
+    if (!isTRUE(args$allow_uncorrected)) {
+      stop("ERROR: batch correction failed: ", reason,
+           ". No corrected table was written (see corrected/BATCH_CORRECTION_STATUS.tsv). ",
+           "Pass --allow_uncorrected to continue with UNCORRECTED data under that name.")
+    }
+    tables$UNCORRECTED_passthrough <- otu_raw
+    save_table(otu_raw, file.path(corr_dir, "UNCORRECTED_passthrough.tsv"))
 
     # Save failure info to parameters file
     sink(param_file)
@@ -1220,8 +1282,7 @@ if (file.exists(cache_file)) {
     cat("\nUsing uncorrected data for downstream analysis.\n")
     sink()
 
-    cat("WARNING: Saved UNCORRECTED data to corrected folder.\n")
-    cat("         The 'ConQuR_tuned' results are identical to 'raw' data!\n\n")
+    cat("WARNING: --allow_uncorrected: saved UNCORRECTED data as UNCORRECTED_passthrough.tsv\n\n")
   }
 }
 
@@ -1307,19 +1368,7 @@ message("DONE")
 #   --prefix output/results \
 #   --r2_threshold 0.30  # 30% reduction required
 
-# Manual Phase 1 only
-# Rscript script.R \
-#   --otu data.csv \
-#   --meta meta.tsv \
-#   --prefix output/results \
-#   --phase 1
-
-# Manual Phase 3 only
-# Rscript script.R \
-#   --otu data.csv \
-#   --meta meta.tsv \
-#   --prefix output/results \
-#   --phase 3
+# (--phase accepts only 'auto': manual phases 1/3 were removed; the pipeline refuses others at launch)
 
 # Multiple tumor types (case-insensitive)
 # Rscript script.R \

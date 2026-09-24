@@ -14,7 +14,8 @@ nextflow.enable.dsl=2
 process antiSMASH {
     label 'process_high'
     scratch true
-    publishDir "${params.antismash_dir}/${sample_id}", mode: 'copy'
+    // Dynamic path: see the note in decontamination.nf.
+    publishDir path: { "${params.antismash_dir}/${sample_id}" }, mode: 'copy'
     conda "${params.antismash_env}"
 
     // Ignore failures from empty/tiny assemblies with no genes
@@ -34,14 +35,6 @@ process antiSMASH {
     // Use prodigal-m (metagenomic mode) for contigs, prodigal for MAGs
     def genefinder = params.mode == "contigs" ? "prodigal-m" : "prodigal"
     """
-    # Skip check: if results already exist in publishDir
-    if [[ -f "${params.antismash_dir}/${sample_id}/index.html" ]]; then
-        echo "Skipping ${sample_id}: results already exist"
-        mkdir -p ${sample_id}
-        ln -s ${params.antismash_dir}/${sample_id}/* ${sample_id}/ 2>/dev/null || true
-        exit 0
-    fi
-
     # Decompress if gzipped
     INPUT_FASTA="${fasta}"
     if [[ "${fasta}" == *.gz ]]; then

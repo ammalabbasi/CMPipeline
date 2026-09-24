@@ -25,36 +25,11 @@ name: nf-decontam-env
 channels:
   - conda-forge
   - bioconda
-  - defaults
+  - nodefaults
 
 dependencies:
-  # R base
   - r-base=4.3
-
-  # Core R packages
-  - r-pacman
-  - r-tidyverse
-  - r-argparse
-  - r-devtools
-
-  # Visualization
-  - r-ggrepel
-  - r-ggplot2
-  - r-patchwork
-
-  # Microbiome analysis
-  - bioconductor-phyloseq
-  - bioconductor-decontam
-
-  # Statistical analysis
-  - r-vegan
-  - r-mass
-
-  # Data manipulation
-  - r-dplyr
-  - r-tidyr
-  - r-readr
-  - r-stringr
-
-  # Utilities
-  - r-optparse
+  - bioconductor-decontam=1.22.0
+  - bioconductor-phyloseq=1.46.0
+  - r-optparse=1.7.5
+  - r-digest=0.6.37
