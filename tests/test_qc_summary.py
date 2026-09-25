@@ -392,7 +392,8 @@ class StageConsistencyTests(unittest.TestCase):
 
     def test_invalid_batch_ledger_rows_are_errors(self):
         for rows in ([("T1", "maybe", "eligible")], [("T1", "excluded", "")],
-                     [("T1", "included", "eligible"), ("T1", "included", "eligible")]):
+                     [("T1", "included", "eligible"), ("T1", "included", "eligible")],
+                     [("T1", "unused", "metadata row absent from count table"), ("T1", "included", "eligible")]):
             with self.subTest(rows=rows):
                 with self.assertRaises(ValueError):
                     self.build(decontam=None, species=rows, genus=None)

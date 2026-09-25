@@ -223,7 +223,7 @@ def parse_batch_sample_status(path: Path) -> dict[str, str]:
 
     `unused` rows (metadata without a count-table column) are not samples of the analysis.
     """
-    statuses = {}
+    statuses, seen = {}, set()
     with path.open() as handle:
         for record in csv.DictReader(handle, delimiter="\t"):
             sample = (record.get("sample") or "").strip()
@@ -233,8 +233,10 @@ def parse_batch_sample_status(path: Path) -> dict[str, str]:
                 raise ValueError(f"{path.name}: invalid batch ledger row {sample!r} / {status!r}")
             if status == "excluded" and not reason:
                 raise ValueError(f"{path.name}: excluded sample {sample} has no reason")
-            if sample in statuses:
+            # Every row counts, unused ones included: an ID may appear once per ledger.
+            if sample in seen:
                 raise ValueError(f"{path.name}: duplicate sample {sample}")
+            seen.add(sample)
             if status != "unused":
                 statuses[sample] = "included" if status == "included" else f"excluded: {reason}"
     return statuses
