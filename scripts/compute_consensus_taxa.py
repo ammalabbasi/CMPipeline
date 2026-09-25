@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from adjustText import adjust_text
 import sys
+from count_tables import read_counts
 
 # Argument parser
 parser = argparse.ArgumentParser(
@@ -50,10 +51,13 @@ else:
 
 
 # Load Bracken genus data
-bracken_genus_df = pd.read_csv(args.bracken_genus, sep="\t")
+genus_samples, genus_rows = read_counts(args.bracken_genus, "g")
+bracken_genus_df = pd.DataFrame.from_dict(genus_rows, orient="index", columns=genus_samples).rename_axis("clade_name").reset_index()
+if not genus_rows:
+    raise ValueError("No genus counts available for consensus")
 bracken_genus_df.rename(columns={'#Classification': 'clade_name'}, inplace=True)
 bracken_genus_df = bracken_genus_df[~bracken_genus_df['clade_name'].str.contains(r'Viruses|\|s__', na=False)]
-bracken_genus_df.columns = bracken_genus_df.columns.str.replace(r'\.bracken\.G\.krakenreport\.txt$', '', regex=True)
+# Exact sample IDs were validated at the count-table boundary.
 bracken_sample_cols = [c for c in bracken_genus_df.columns if c != 'clade_name']
 bracken_genus_df = bracken_genus_df.dropna(subset=['clade_name'])
 # Extract genus name from full taxonomy (d__...|g__GenusName)
@@ -69,10 +73,15 @@ print(f"Samples above {args.min_reads:g}-read threshold: {len(samples_above_thre
 
 
 # Load Bracken species data
-bracken_species_df = pd.read_csv(args.bracken_species, sep="\t")
+species_samples, species_rows = read_counts(args.bracken_species, "s")
+if set(species_samples) != set(genus_samples):
+    raise ValueError("Bracken genus/species sample IDs differ")
+bracken_species_df = pd.DataFrame.from_dict(species_rows, orient="index", columns=genus_samples).rename_axis("clade_name").reset_index()
+if not species_rows:
+    raise ValueError("No species counts available for consensus")
 bracken_species_df.rename(columns={'#Classification': 'clade_name'}, inplace=True)
 bracken_species_df = bracken_species_df[~bracken_species_df['clade_name'].str.contains('Viruses', na=False)]
-bracken_species_df.columns = bracken_species_df.columns.str.replace(r'\.bracken\.S\.krakenreport\.txt$', '', regex=True)
+# Do not strip a filename-like suffix from an already canonical sample ID.
 bracken_species_df = bracken_species_df.dropna(subset=['clade_name'])
 bracken_species_df['genus_name'] = bracken_species_df['clade_name'].str.split(r'\|g__', expand=True)[1].str.split(r'\|s__', expand=True)[0]
 bracken_species_df['species_name'] = bracken_species_df['clade_name'].str.split(r'\|g__', expand=True)[1].str.split(r'\|s__', expand=True)[1]
@@ -81,8 +90,8 @@ bracken_species_df = bracken_species_df.dropna(subset=['species_name'])
 # Per-sample library sizes, from the cleaned Bracken tables BEFORE any consensus filtering.
 species_sample_cols = [c for c in bracken_species_df.columns
                        if c not in ('clade_name', 'genus_name', 'species_name')]
-genus_totals = bracken_genus_df[bracken_sample_cols].apply(pd.to_numeric, errors='coerce').sum()
-species_totals = bracken_species_df[species_sample_cols].apply(pd.to_numeric, errors='coerce').sum()
+genus_totals = bracken_genus_df[bracken_sample_cols].sum()
+species_totals = bracken_species_df[species_sample_cols].sum()
 pd.DataFrame({
     "sample": bracken_sample_cols,
     "bracken_genus_total": [genus_totals.get(c, 0) for c in bracken_sample_cols],

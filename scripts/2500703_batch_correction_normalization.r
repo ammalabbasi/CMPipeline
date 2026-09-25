@@ -71,193 +71,11 @@ save_table <- function(df, path){
   cat("  → Saved", nrow(df_out), "rows x", ncol(df_out)-1, "taxa to", basename(path), "\n")
 }
 
-load_table <- function(path){
-  # Auto-detect CSV vs TSV
-  if (grepl("\\.csv$", path, ignore.case = TRUE)) {
-    df <- read_csv(path, show_col_types = FALSE, progress = FALSE)
-  } else {
-    df <- read_tsv(path, show_col_types = FALSE, progress = FALSE)
-  }
-  
-  # Identify the first column (taxon names or sample IDs)
-  first_col <- colnames(df)[1]
-  
-  # Check if this is OTU table format (taxa as rows) or already transposed
-  if (first_col %in% c("species_name", "name", "taxa", "taxon", "genus", "species", "OTU", "ASV")) {
-    # This is OTU table format (taxa as rows) - need to transpose
-    cat("  → Detected OTU table format, transposing...\n")
-    
-    df_out <- df %>%
-      column_to_rownames(first_col) %>%
-      t() %>%
-      as.data.frame()
-    
-  } else if (first_col == "sample_id") {
-    # Already transposed format (samples as rows)
-    df_out <- df %>%
-      column_to_rownames("sample_id") %>%
-      as.data.frame()
-    
-  } else {
-    # Assume first column contains sample IDs
-    cat("  → Assuming first column contains sample IDs\n")
-    df_out <- df %>%
-      column_to_rownames(first_col) %>%
-      as.data.frame()
-  }
-  
-  cat("  → Loaded", nrow(df_out), "samples x", ncol(df_out), "taxa from", basename(path), "\n")
-  
-  return(df_out)
-}
-
-# ---------- Load and prepare data ---------------------------------------------
-load_and_prepare_data <- function(otu_path, meta_path) {
-  cat("INFO: Loading and preparing data for batch correction...\n")
-  
-  otu_raw <- read_csv(otu_path, show_col_types = FALSE)
-
-  # Taxon name column 자동 감지
-  taxon_name_candidates <- c("species_name", "name", "X", "species", "taxon",
-                             "taxa", "clade_name", "Taxon", "Species",
-                             "organism", "OTU", "ASV", "#OTU ID", "OTUID")
-  # The declared column wins (audit C09); guessing stays only for standalone use.
-  if (!is.null(args$taxon_column) && nzchar(args$taxon_column) && args$taxon_column %in% colnames(otu_raw)) {
-    taxon_name_candidates <- args$taxon_column
-  }
-  name_col <- taxon_name_candidates[taxon_name_candidates %in% colnames(otu_raw)][1]
-
-  # 후보에서 찾지 못했으면 첫 번째 non-numeric 컬럼 사용
-  if (is.na(name_col)) {
-    cat("WARN: Standard taxon name column not found. Available OTU table columns:\n")
-    cat("  ", paste(head(colnames(otu_raw), 10), collapse = ", "), "...\n")
-
-    # 첫 번째 문자열 컬럼 찾기
-    non_numeric_cols <- which(!sapply(otu_raw, is.numeric))
-    if (length(non_numeric_cols) > 0) {
-      name_col <- colnames(otu_raw)[non_numeric_cols[1]]
-      cat("INFO: Using first non-numeric column '", name_col, "' as taxon name.\n", sep = "")
-    } else {
-      stop("ERROR: Cannot identify taxon name column in OTU table.\n",
-           "Available columns: ", paste(colnames(otu_raw), collapse = ", "))
-    }
-  } else {
-    cat("INFO: Using '", name_col, "' as taxon name column.\n", sep = "")
-  }
-
-  otu_data <- otu_raw %>%
-    column_to_rownames(name_col) %>%
-    t() %>%
-    as.data.frame()
-  
-  original_sample_count <- nrow(otu_data)
-  dropped <- rownames(otu_data)[rowSums(otu_data) == 0]
-  otu_data <- otu_data[rowSums(otu_data) > 0, ]
-  cat("INFO: Removed", original_sample_count - nrow(otu_data), "empty samples.\n")
-  # Decontam keeps all-zero samples as evidence of absence; batch correction cannot use them.
-  # Record them rather than leaving the change to the log (audit A08).
-  assign("dropped_empty_samples", dropped, envir = globalenv())
-  write.table(data.frame(sample = dropped, status = rep("dropped", length(dropped)),
-                         reason = rep("all-zero after decontamination", length(dropped))),
-              file.path(dirname(args$prefix), "batch_correction_sample_status.tsv"),
-              sep = "\t", quote = FALSE, row.names = FALSE)
-
-  # Sample ID normalization - remove common suffixes from OTU sample IDs
-  cat("\nINFO: Normalizing sample IDs...\n")
-  original_sample_ids <- rownames(otu_data)
-  normalized_sample_ids <- gsub("\\.bracken\\.[GS]\\.krakenreport\\.txt$", "", original_sample_ids)
-  normalized_sample_ids <- gsub("\\.bracken\\.[GS]\\.mpa\\.krakenreport\\.txt$", "", normalized_sample_ids)
-  cat("INFO: Example OTU sample IDs (before):", paste(head(original_sample_ids, 3), collapse = ", "), "\n")
-  cat("INFO: Example OTU sample IDs (after):", paste(head(normalized_sample_ids, 3), collapse = ", "), "\n")
-  rownames(otu_data) <- normalized_sample_ids
-
-  meta_raw <- read_tsv(meta_path, show_col_types = FALSE)
-
-  # 빈 컬럼명 처리 (Empty column names)
-  col_names <- colnames(meta_raw)
-  empty_cols <- which(col_names == "" | is.na(col_names))
-  if(length(empty_cols) > 0) {
-    cat("WARN: Found", length(empty_cols), "empty column name(s). Removing...\n")
-    meta_raw <- meta_raw[, -empty_cols, drop = FALSE]
-  }
-
-  # Sample ID column 자동 감지
-  sample_id_candidates <- c("donor_id", "sample_id", "sampleid", "Sample.ID", "Sample_ID",
-                            "SampleID", "Sample ID", "SAMPLE_ID", "Sample ID_x",
-                            "subject_id", "SubjectID", "Subject_ID", "patient", "Patient")
-  # The pipeline passes the SAME columns decontam used (audit C09); guessing from candidate lists
-  # is kept only for standalone use of this script.
-  if (!is.null(args$sample_id_column) && nzchar(args$sample_id_column)) {
-    if (!(args$sample_id_column %in% colnames(meta_raw)))
-      stop("ERROR: --sample_id_column '", args$sample_id_column, "' is not in the metadata (columns: ",
-           paste(colnames(meta_raw), collapse = ", "), ")")
-    sample_id_candidates <- args$sample_id_column
-  }
-  sample_id_col <- sample_id_candidates[sample_id_candidates %in% colnames(meta_raw)][1]
-
-  if(is.na(sample_id_col)) {
-    stop("ERROR: Sample ID column not found in metadata. Tried: ",
-         paste(sample_id_candidates, collapse = ", "),
-         "\nAvailable columns: ", paste(colnames(meta_raw), collapse = ", "))
-  }
-
-  cat("INFO: Using '", sample_id_col, "' as sample ID column.\n", sep = "")
-
-  # sample_id로 컬럼명 표준화
-  if(sample_id_col != "sample_id") {
-    # A metadata file can carry its own 'sample_id' column next to the declared one; keep it under
-    # another name instead of crashing in rename() with a duplicate column (audit C09).
-    if ("sample_id" %in% colnames(meta_raw)) {
-      meta_raw <- meta_raw %>% rename(sample_id_original = sample_id)
-      cat("INFO: existing 'sample_id' column kept as 'sample_id_original'; joining on '", sample_id_col, "'\n", sep = "")
-    }
-    meta_raw <- meta_raw %>% rename(sample_id = !!sym(sample_id_col))
-  }
-
-  # Sample Type 처리: 여러 가능한 컬럼명 지원
-  type_candidates <- c("Type", "type", "Sample Type_x", "Sample_Type", "sample_type",
-                       "cohort", "Cohort", "group", "Group", "condition", "Condition")
-  if (!is.null(args$type_column) && nzchar(args$type_column) && args$type_column %in% colnames(meta_raw)) {
-    type_candidates <- args$type_column
-  } else if (!is.null(args$type_column) && nzchar(args$type_column) && !identical(args$type_column, "Type")) {
-    stop("ERROR: --type_column '", args$type_column, "' is not in the metadata (columns: ",
-         paste(colnames(meta_raw), collapse = ", "), ")")
-  }
-  type_col <- type_candidates[type_candidates %in% colnames(meta_raw)][1]
-
-  if(!is.na(type_col) && type_col != "Type") {
-    cat("INFO: Using '", type_col, "' column for Type information\n", sep = "")
-    meta_raw$Type <- meta_raw[[type_col]]
-  } else if(is.na(type_col)) {
-    cat("WARN: No Type column found in metadata. Creating default Type='Sample'\n")
-    meta_raw$Type <- "Sample"
-  }
-
-  # Duplicate IDs are refused, not silently kept-first: which row "wins" would decide a sample's
-  # batch and covariates (audit C09).
-  if (any(duplicated(meta_raw$sample_id))) {
-    dup_ids <- unique(meta_raw$sample_id[duplicated(meta_raw$sample_id)])
-    write_status("failed", paste0(length(dup_ids), " duplicate sample ID(s) in the metadata"))
-    stop("ERROR: ", length(dup_ids), " sample ID(s) appear more than once in the metadata column '",
-         sample_id_col, "' (first: ", paste(head(dup_ids, 5), collapse = ", "), "). Deduplicate it first.")
-  }
-
-  common_samples <- intersect(rownames(otu_data), meta_raw$sample_id)
-
-  if (length(common_samples) == 0) {
-    stop("No common samples between OTU table and metadata")
-  }
-
-  otu_final <- otu_data[common_samples, , drop = FALSE]
-  meta_final <- meta_raw %>%
-    filter(sample_id %in% common_samples) %>%
-    column_to_rownames("sample_id")
-  meta_final <- meta_final[common_samples, , drop = FALSE]
-  
-  cat("INFO:", length(common_samples), "common samples prepared.\n")
-  
-  return(list(otu = otu_final, meta = meta_final))
-}
+# Shared strict readers are sourced from this script's package directory.
+script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+if (length(script_arg) != 1L) stop("Cannot locate batch script")
+source(file.path(dirname(normalizePath(sub("^--file=", "", script_arg))), "batch_contract.R"))
+source(file.path(dirname(normalizePath(sub("^--file=", "", script_arg))), "batch_reporting.R"))
 
 # ---------- Select optimal reference batch ------------------------------------
 select_optimal_reference_batch <- function(tab, meta, batch_col) {
@@ -272,7 +90,7 @@ select_optimal_reference_batch <- function(tab, meta, batch_col) {
   batch_centroids <- list()
   for (batch in batches) {
     batch_samples <- rownames(meta[meta[[batch_col]] == batch, ])
-    batch_data <- tab[batch_samples, ]
+    batch_data <- tab[batch_samples, , drop = FALSE]
     batch_centroids[[batch]] <- colMeans(batch_data)
   }
   
@@ -310,25 +128,27 @@ select_optimal_reference_batch <- function(tab, meta, batch_col) {
 }
 
 # ---------- PERMANOVA ---------------------------------------------------------
-run_permanova <- function(mat, meta, rhs_formula, dist_meth){
-  smp  <- intersect(rownames(mat), rownames(meta))
-  if (anyNA(mat[smp, ])) mat[smp, ][is.na(mat[smp, ])] <- 0
-  mat <- mat[ , colSums(mat) > 0, drop = FALSE]
-  dist <- vegdist(mat[smp, ], dist_meth)
+run_permanova <- function(mat, meta, rhs_formula, dist_meth, transformed = FALSE){
+  smp <- rownames(mat)
+  dist <- batch_distance(mat, meta, dist_meth, transformed)
   # drop = FALSE: with ONE predictor (batch only -- `--covariates none`, or every covariate
   # filtered out) `[` returned a vector and adonis2 failed "'.' in formula and no 'data' argument".
   pdat <- meta[smp, all.vars(rhs_formula), drop = FALSE]
   # by = "margin" can fail when a strong correction makes the Bray batch sum of squares negative
   # (audit A12). Fall back to sequential terms with batch entered LAST (so its R2 is still the
   # batch effect after covariates), and say so, rather than crashing a successful correction.
+  evaluation_mode <- "margin"
   res <- tryCatch(
     adonis2(dist ~ ., data = pdat, permutations = 999, by = "margin"),
     error = function(e) {
       cat("WARN: PERMANOVA by='margin' failed (", conditionMessage(e), "); using by='terms' with batch last\n")
+      evaluation_mode <<- "terms_batch_last"
       vars <- all.vars(rhs_formula); vars <- c(setdiff(vars, vars[1]), vars[1])
       adonis2(reformulate(vars, response = "dist"), data = pdat, permutations = 999, by = "terms")
     })
-  as_tibble(res, rownames = "Term") %>% dplyr::select(Term, Df, R2, `Pr(>F)`)
+  as_tibble(res, rownames = "Term") %>% dplyr::select(Term, Df, R2, `Pr(>F)`) %>%
+    mutate(Evaluation = evaluation_mode, Distance = dist_meth, N = nrow(mat),
+           Model = paste(deparse(rhs_formula), collapse = " "))
 }
 
 # ---------- Evaluate batch effect (PERMANOVA-based) ---------------------------
@@ -441,7 +261,8 @@ run_phase <- function(phase_num, tab, meta, batch_col, covars,
       lambda_quantile_pool = lambda_pool,
       interplt_pool = interplt_pool,
       frequencyL = 0,
-      frequencyU = 1
+      frequencyU = 1,
+      num_core = args$threads
     )
     
     elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
@@ -487,64 +308,10 @@ run_vanilla_conqur <- function(tab_raw, meta, batch_col, covars, corr_dir) {
   cat("VANILLA ConQuR MODE (non-tuned)\n")
   cat(strrep("=", 70), "\n\n")
 
-  # Data preparation (same as auto-phase)
-  smp <- intersect(rownames(tab_raw), rownames(meta))
-  tab <- tab_raw[smp, ]
-  meta <- meta[smp, ]
-
-  # Remove unknown batches
-  unknown_count <- sum(meta[[batch_col]] == "Unknown" | is.na(meta[[batch_col]]))
-  if (unknown_count > 0) {
-    cat("WARN: Removing", unknown_count, "samples with Unknown/NA batch\n")
-    valid_batch <- meta[[batch_col]] != "Unknown" & !is.na(meta[[batch_col]])
-    meta <- meta[valid_batch, ]
-    tab <- tab[rownames(meta), ]
-  }
-
-  # Remove samples with NA covariates
-  complete_rows <- complete.cases(meta[, c(batch_col, covars)])
-  n_incomplete <- sum(!complete_rows)
-  if (n_incomplete > 0) {
-    cat("WARN: Removing", n_incomplete, "samples with NA in covariates\n")
-    meta <- meta[complete_rows, ]
-    tab <- tab[rownames(meta), ]
-  }
-
-  # Batch validation
-  batch_counts <- table(meta[[batch_col]])
-  small_batches <- names(batch_counts)[batch_counts < 5]
-  if (length(small_batches) > 0) {
-    cat("WARN: Removing batches with <5 samples:", paste(small_batches, collapse=", "), "\n")
-    keep_batches <- !(meta[[batch_col]] %in% small_batches)
-    meta <- meta[keep_batches, ]
-    tab <- tab[rownames(meta), ]
-  }
-
-  # Covariate validation
-  keep_covars <- rep(TRUE, length(covars))
-  names(keep_covars) <- covars
-  batches <- unique(meta[[batch_col]])
-  for (i in seq_along(covars)) {
-    cov <- covars[i]
-    if (!cov %in% colnames(meta)) { keep_covars[i] <- FALSE; next }
-    for (batch in batches) {
-      batch_data <- meta[meta[[batch_col]] == batch, cov]
-      if (is.numeric(batch_data)) {
-        v <- var(batch_data, na.rm = TRUE)
-        if (is.na(v) || v == 0) { keep_covars[i] <- FALSE; break }
-      } else {
-        if (length(unique(batch_data[!is.na(batch_data)])) < 2) { keep_covars[i] <- FALSE; break }
-      }
-    }
-  }
-  valid_covars <- covars[keep_covars]
-  if (length(valid_covars) == 0) {
-    final_covars <- NULL
-  } else {
-    final_covars <- meta[, valid_covars, drop = FALSE]
-  }
-
-  meta <- droplevels(meta)
+  # The cohort and requested covariates were fixed once before dispatch.
+  tab <- tab_raw
+  valid_covars <- covars
+  final_covars <- meta[, covars, drop = FALSE]
 
   # Baseline evaluation
   baseline <- evaluate_batch_effect(tab, meta, batch_col, valid_covars)
@@ -571,7 +338,8 @@ run_vanilla_conqur <- function(tab_raw, meta, batch_col, covars, corr_dir) {
       batch_ref = batch_ref,
       logistic_lasso = FALSE,
       quantile_type = "lasso",
-      interplt = FALSE
+      interplt = FALSE,
+      num_core = args$threads
     )
 
     elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
@@ -587,7 +355,7 @@ run_vanilla_conqur <- function(tab_raw, meta, batch_col, covars, corr_dir) {
     cat(sprintf("\nVanilla ConQuR completed in %.1f minutes\n", elapsed))
     cat(sprintf("Before: Batch R2 = %.4f\n", baseline$batch_r2))
     cat(sprintf("After:  Batch R2 = %.4f\n", post_eval$batch_r2))
-    cat(sprintf("Reduction: %.1f%%\n", r2_reduction * 100))
+    cat(sprintf("Reduction: %.1f%%\n", report_reduction_percent(baseline$batch_r2, baseline$batch_r2 - delta_r2)))
 
     return(list(
       data = corrected,
@@ -621,110 +389,14 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
   cat("  ELSE → Run Phase 3 and compare results\n")
   cat(strrep("=", 70), "\n\n")
 
-  # Data preparation
-  smp <- intersect(rownames(tab_raw), rownames(meta))
-  tab <- tab_raw[smp, ]
-  meta <- meta[smp, ]
-  
-  # Remove unknown batches
-  unknown_count <- sum(meta[[batch_col]] == "Unknown" | is.na(meta[[batch_col]]))
-  if (unknown_count > 0) {
-    cat("WARN: Removing", unknown_count, "samples with Unknown/NA batch\n")
-    valid_batch <- meta[[batch_col]] != "Unknown" & !is.na(meta[[batch_col]])
-    meta <- meta[valid_batch, ]
-    tab <- tab[rownames(meta), ]
-  }
-  
-  # Remove samples with NA covariates
-  complete_rows <- complete.cases(meta[, c(batch_col, covars)])
-  n_incomplete <- sum(!complete_rows)
-  
-  if (n_incomplete > 0) {
-    cat("WARN: Removing", n_incomplete, "samples with NA in covariates\n")
-    meta <- meta[complete_rows, ]
-    tab <- tab[rownames(meta), ]
-  }
-  
-  # Check minimum samples
+  # Identical cohort/model for correction and every raw/corrected comparison.
+  tab <- tab_raw
   if (nrow(meta) < 20) {
-    cat("ERROR: Too few samples after filtering (", nrow(meta), ")\n")
-    return(list(
-      data = tab,
-      phase_used = 0,
-      success = FALSE,
-      message = "Insufficient samples"
-    ))
+    return(list(data = tab, phase_used = 0, success = FALSE,
+                message = "Insufficient samples: tuned mode requires at least 20 eligible samples"))
   }
-  
-  # Batch validation
-  batch_counts <- table(meta[[batch_col]])
-  cat("INFO: Batch distribution:\n")
-  print(batch_counts)
-  
-  small_batches <- names(batch_counts)[batch_counts < 5]
-  if (length(small_batches) > 0) {
-    cat("WARN: Removing batches with <5 samples:", paste(small_batches, collapse=", "), "\n")
-    keep_batches <- !(meta[[batch_col]] %in% small_batches)
-    meta <- meta[keep_batches, ]
-    tab <- tab[rownames(meta), ]
-    batch_counts <- table(meta[[batch_col]])
-  }
-  
-  # Covariate validation (batch-level)
-  cat("\nINFO: Validating covariates at BATCH level...\n")
-  
-  batches <- unique(meta[[batch_col]])
-  keep_covars <- rep(TRUE, length(covars))
-  names(keep_covars) <- covars
-  
-  for (i in seq_along(covars)) {
-    cov <- covars[i]
-    
-    if (!cov %in% colnames(meta)) {
-      cat("WARN: Covariate", cov, "not found\n")
-      keep_covars[i] <- FALSE
-      next
-    }
-    
-    problematic_batches <- c()
-    
-    for (batch in batches) {
-      batch_data <- meta[meta[[batch_col]] == batch, cov]
-      
-      if (is.numeric(batch_data)) {
-        batch_var <- var(batch_data, na.rm = TRUE)
-        if (is.na(batch_var) || batch_var == 0) {
-          problematic_batches <- c(problematic_batches, batch)
-        }
-      } else {
-        batch_levels <- length(unique(batch_data[!is.na(batch_data)]))
-        if (batch_levels < 2) {
-          problematic_batches <- c(problematic_batches, batch)
-        }
-      }
-    }
-    
-    if (length(problematic_batches) > 0) {
-      cat("  Covariate", cov, "problematic in", length(problematic_batches), "batch(es)\n")
-      cat("  Removing:", cov, "\n")
-      keep_covars[i] <- FALSE
-    }
-  }
-  
-  valid_covars <- covars[keep_covars]
-  
-  if (length(valid_covars) == 0) {
-    # Every covariate was constant within some batch. ConQuR cannot run on batch alone (audit A02).
-    return(list(success = FALSE, message = paste0(
-      "no covariate varies within every batch (requested: ", paste(covars, collapse = ", "),
-      "); ConQuR needs >= 1")))
-  } else {
-    cat("INFO: Using", length(valid_covars), "covariate(s):", 
-        paste(valid_covars, collapse=", "), "\n\n")
-    final_covars <- meta[, valid_covars, drop = FALSE]
-  }
-  
-  meta <- droplevels(meta)
+  valid_covars <- covars
+  final_covars <- meta[, covars, drop = FALSE]
 
   # Baseline evaluation
   cat("\n", strrep("-", 70), "\n")
@@ -777,7 +449,7 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
   cat(sprintf("After:        Batch R² = %.4f (p = %.4f)\n", 
               phase1_eval$batch_r2, phase1_eval$batch_p))
   cat(sprintf("Change:       ΔR² = %.4f\n", delta_r2))
-  cat(sprintf("Reduction:    %.1f%%\n", r2_reduction * 100))
+  cat(sprintf("Reduction:    %.1f%%\n", report_reduction_percent(baseline$batch_r2, baseline$batch_r2 - delta_r2)))
   
   # Overcorrection check
   if (!is.na(baseline$covariate_r2) && baseline$covariate_r2 > 0) {
@@ -794,7 +466,7 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
   if (phase1_eval$batch_r2 < baseline$batch_r2 && r2_reduction >= r2_threshold) {
     cat("✓ DECISION: STOP at Phase 1\n")
     cat(sprintf("  R² reduction (%.1f%%) meets threshold (≥%.1f%%)\n", 
-                r2_reduction * 100, r2_threshold * 100))
+                report_reduction_percent(baseline$batch_r2, baseline$batch_r2 - delta_r2), r2_threshold * 100))
     cat("  Phase 3 not needed.\n\n")
     
     # Save Phase 1 result
@@ -817,7 +489,7 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
     } else {
       cat("→ DECISION: RUN PHASE 3\n")
       cat(sprintf("  Phase 1 R² reduction (%.1f%%) below threshold (%.1f%%)\n", 
-                  r2_reduction * 100, r2_threshold * 100))
+                  report_reduction_percent(baseline$batch_r2, baseline$batch_r2 - delta_r2), r2_threshold * 100))
       cat("  Phase 3 may find better parameters.\n")
     }
     
@@ -856,9 +528,9 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
       cat(strrep("-", 70), "\n")
       cat(sprintf("Baseline:     Batch R² = %.4f\n", baseline$batch_r2))
       cat(sprintf("Phase 1:      Batch R² = %.4f (%.1f%% reduction)\n", 
-                  phase1_eval$batch_r2, r2_reduction * 100))
+                  phase1_eval$batch_r2, report_reduction_percent(baseline$batch_r2, baseline$batch_r2 - delta_r2)))
       cat(sprintf("Phase 3:      Batch R² = %.4f (%.1f%% reduction)\n", 
-                  phase3_eval$batch_r2, phase3_reduction * 100))
+                  phase3_eval$batch_r2, report_reduction_percent(baseline$batch_r2, phase3_eval$batch_r2)))
       cat(strrep("-", 70), "\n\n")
       
       # Compare and select
@@ -907,7 +579,7 @@ run_auto_phase <- function(tab_raw, meta, batch_col, covars,
   cat("Phase used:       ", final_result$phase_used, "\n", sep="")
   cat(sprintf("Baseline R²:      %.4f\n", final_result$baseline_r2))
   cat(sprintf("Final R²:         %.4f\n", final_result$final_r2))
-  cat(sprintf("Total reduction:  %.1f%%\n", final_result$r2_reduction * 100))
+  cat(sprintf("Total reduction:  %.1f%%\n", report_reduction_percent(final_result$baseline_r2, final_result$final_r2)))
   cat(sprintf("Total time:       %.1f minutes\n", final_result$elapsed))
   cat(strrep("=", 70), "\n\n")
 
@@ -930,139 +602,48 @@ generate_conqur_plots <- function(tab, meta, batch_col, title, out_pref){
 
 # ---------- Normalize ---------------------------------------------------------
 normalize_all <- function(mat, stub){
+  matrix_ok(mat, counts = TRUE)
+  if (any(rowSums(mat) == 0)) stop("Cannot normalize zero-total analysis samples")
   dir.create(dirname(stub), showWarnings = FALSE, recursive = TRUE)
-
-  # Preserve original column and row names
-  original_colnames <- colnames(mat)
-  original_rownames <- rownames(mat)
-  cat("\nINFO: Processing", nrow(mat), "samples x", length(original_colnames), "taxa\n")
-  
-  # CRITICAL: Ensure mat is a proper matrix/data.frame
-  if (!is.data.frame(mat) && !is.matrix(mat)) {
-    cat("  → Converting input to data.frame\n")
-    mat <- as.data.frame(mat)
-  }
-
-  paths <- c(pseudo = paste0(stub,"_clr_pseudo.tsv"),
-             czm    = paste0(stub,"_clr_czm.tsv"),
-             rclr   = paste0(stub,"_rclr.tsv"))
+  paths <- c(CLR_pseudo = paste0(stub, "_clr_pseudo.tsv"),
+             CLR_CZM = paste0(stub, "_clr_czm.tsv"), RCLR = paste0(stub, "_rclr.tsv"))
+  if (any(file.exists(paths))) stop("Existing normalization outputs: use a fresh output directory")
+  x <- as.matrix(mat)
   out <- list()
-
-  ## CLR + pseudo
-  cat("\n[1/3] CLR + pseudo-count\n")
-  if (file.exists(paths["pseudo"])) {
-    cat("  → Loading cached file\n")
-    out$CLR_pseudo <- load_table(paths["pseudo"])
-  } else {
-    tryCatch({
-      # Convert to matrix for numerical operations
-      mat_num <- as.matrix(mat)
-      positive_vals <- mat_num[mat_num > 0]
-      
-      if (length(positive_vals) == 0) {
-        stop("No positive values in data")
-      }
-      
-      pseudo_candidate <- quantile(positive_vals, 0.05) * 0.5
-      pseudo <- max(pseudo_candidate, 0.1)
-      
-      cat("  → Calculated pseudocount:", round(pseudo, 6), "\n")
-      
-      # Add pseudocount and perform CLR
-      mat_pseudo <- mat_num + pseudo
-      result <- decostand(mat_pseudo, "clr")
-      
-      # Convert back to data.frame and restore names
-      result <- as.data.frame(result)
-      colnames(result) <- original_colnames
-      rownames(result) <- original_rownames
-      
-      if (any(!is.finite(as.matrix(result)))) {
-        stop("Non-finite values in CLR result")
-      }
-      
-      out$CLR_pseudo <- result
-      save_table(out$CLR_pseudo, paths["pseudo"])
-      cat("  ✓ CLR+pseudo successful\n")
-      
+  for (method in names(paths)) {
+    out[[method]] <- tryCatch({
+      result <- switch(method,
+        CLR_pseudo = {
+          pseudo <- max(as.numeric(quantile(x[x > 0], 0.05)) * 0.5, 0.1)
+          decostand(x + pseudo, "clr")
+        },
+        CLR_CZM = {
+          # Strictly positive input needs no zero replacement.
+          imputed <- if (any(x == 0)) cmultRepl(x, method = "CZM", label = 0,
+                        output = "p-counts", z.warning = 1, z.delete = FALSE,
+                        suppress.print = TRUE) else x
+          decostand(imputed, "clr")
+        },
+        RCLR = {
+          y <- rclr_f(x)
+          # Algorithmic zeros only; do not conceal unrelated NA/NaN failures.
+          y[x == 0] <- 0
+          dimnames(y) <- dimnames(x)
+          y
+        })
+      result <- as.data.frame(result, check.names = FALSE)
+      matrix_ok(result)
+      assert_same_matrix_ids(result, mat)
+      result
     }, error = function(e) {
-      cat("  ✗ CLR+pseudo failed:", e$message, "\n")
-      out$CLR_pseudo <<- NULL
+      reason <- paste0("Required normalization ", method, " failed: ", conditionMessage(e))
+      write_status("failed", reason)
+      stop(reason, call. = FALSE)
     })
   }
-
-  ## CLR + CZM
-  cat("\n[2/3] CLR + CZM (zero imputation)\n")
-  if (file.exists(paths["czm"])) {
-    cat("  → Loading cached file\n")
-    out$CLR_CZM <- load_table(paths["czm"])
-  } else {
-    tryCatch({
-      # cmultRepl requires matrix input
-      czm_mat <- cmultRepl(as.matrix(mat), 
-                           method = "CZM", 
-                           label = 0,
-                           output = "p-counts",
-                           z.warning = 1, 
-                           z.delete = FALSE,
-                           suppress.print = TRUE)
-      
-      # Perform CLR on imputed data
-      result <- decostand(czm_mat, "clr")
-      
-      # Convert to data.frame and restore names
-      result <- as.data.frame(result)
-      colnames(result) <- original_colnames
-      rownames(result) <- original_rownames
-      
-      out$CLR_CZM <- result   
-      save_table(out$CLR_CZM, paths["czm"])
-      cat("  ✓ CLR+CZM successful\n")
-      
-    }, error = function(e) {
-      cat("  ✗ CLR+CZM failed:", e$message, "\n")
-      out$CLR_CZM <<- NULL
-    })
-  }
-
-  ## RCLR
-  cat("\n[3/3] RCLR (robust CLR)\n")
-  if (file.exists(paths["rclr"])) {
-    cat("  → Loading cached file\n")
-    out$RCLR <- load_table(paths["rclr"])
-  } else {
-    tryCatch({
-      # rclr_f requires matrix input
-      result <- rclr_f(as.matrix(mat))
-      result[is.na(result)] <- 0
-      
-      # Convert to data.frame and restore names
-      result <- as.data.frame(result)
-      colnames(result) <- original_colnames
-      rownames(result) <- original_rownames
-      
-      out$RCLR <- result   
-      save_table(out$RCLR, paths["rclr"])
-      cat("  ✓ RCLR successful\n")
-      
-    }, error = function(e) {
-      cat("  ✗ RCLR failed:", e$message, "\n")
-      out$RCLR <<- NULL
-    })
-  }
-  
-  # Remove NULL entries
-  out <- out[!sapply(out, is.null)]
-  
-  cat("\n", strrep("-", 60), "\n")
-  cat("Normalization summary:\n")
-  cat("  Methods successful:", length(out), "/3\n")
-  if (length(out) > 0) {
-    cat("  Available methods:", paste(names(out), collapse=", "), "\n")
-  }
-  cat(strrep("-", 60), "\n")
-  
-  return(out)
+  # Validate the complete requested set before writing any method for this source.
+  for (method in names(paths)) save_table(out[[method]], paths[[method]])
+  out
 }
 
 # ==============================================================================
@@ -1074,6 +655,8 @@ parser$add_argument("--otu",    required = TRUE)
 parser$add_argument("--meta",   required = TRUE)
 parser$add_argument("--prefix", required = TRUE)
 parser$add_argument("--tumor_only", action = "store_true")
+parser$add_argument("--seed", type = "integer", default = 1)
+parser$add_argument("--threads", type = "integer", default = 2)
 parser$add_argument("--phase", default = "auto",
                    help = "Phase mode: 'auto', '1', or '3'")
 parser$add_argument("--r2_threshold", type = "double", default = 0.25,
@@ -1086,18 +669,22 @@ parser$add_argument("--type_column", type = "character", default = "Type",
                    help = "Name of the column in metadata that specifies sample type for tumor filtering (default: Type)")
 parser$add_argument("--tumor_value", type = "character", default = "Tumor",
                    help = "Comma-separated list of values to recognize as tumor samples (default: Tumor). Case-insensitive matching.")
-parser$add_argument("--taxon_column", type = "character", default = NULL,
+parser$add_argument("--taxon_column", type = "character", default = "clade_name",
                     help = "OTU-table column holding taxon names (the pipeline passes params.taxon_column)")
-parser$add_argument("--sample_id_column", type = "character", default = NULL,
+parser$add_argument("--sample_id_column", type = "character", default = "sample_id",
                     help = "metadata column holding sample IDs (the pipeline passes decontam's)")
 parser$add_argument("--allow_uncorrected", action = "store_true", default = FALSE,
                     help = "on failure, continue with raw counts saved as UNCORRECTED_passthrough.tsv")
 parser$add_argument("--method", type = "character", default = "tune",
                    help = "Correction method: 'tune' (default, auto-phased Tune_ConQuR) or 'vanilla' (default ConQuR)")
 args <- parser$parse_args()
+configure_batch_rng(args$seed, args$threads)
+cat("Reproducibility: seed=", args$seed, "; threads=", args$threads, "; RNG=", paste(RNGkind(), collapse=","), "\n", sep="")
+cat("R2 reduction NA% means non-interpretable; see batch_correction_quality.tsv. Quality is descriptive, not an efficacy pass.\n")
 if (!(args$method %in% c("tune", "vanilla")))
   stop("ERROR: --method must be 'tune' or 'vanilla' (got '", args$method, "')")
 
+reject_existing_batch_outputs(dirname(args$prefix))
 dir.create(dirname(args$prefix), showWarnings = FALSE, recursive = TRUE)
 corr_dir <- file.path(dirname(args$prefix), "corrected"); dir.create(corr_dir, showWarnings=FALSE)
 # One status file per run, whatever happens: corrected | failed, with the reason and sample count.
@@ -1134,50 +721,11 @@ if (args$tumor_only) {
   cat("INFO: Tumor values to match:", paste(tumor_value_vector, collapse = ", "), "\n")
 }
 
-# Load data
-data <- load_and_prepare_data(args$otu, args$meta)
+# Validate all IDs first, then select one cohort for every downstream operation.
+loaded <- load_and_prepare_data(args$otu, args$meta)
+data <- prepare_batch_cohort(loaded, args, covariate_vector)
 otu_raw <- data$otu
 meta <- data$meta
-
-# Filter for tumor samples
-if (args$tumor_only) {
-  message("INFO: Filtering for 'Tumor' samples only.")
-
-  if (!args$type_column %in% colnames(meta)) {
-    stop("ERROR: Type column '", args$type_column, "' not found in metadata")
-  }
-
-  if (sum(is.na(meta[[args$type_column]])) > 0) {
-    cat("WARN:", sum(is.na(meta[[args$type_column]])), "samples with NA in", args$type_column, "column\n")
-    meta <- meta[!is.na(meta[[args$type_column]]), ]
-    otu_raw <- otu_raw[rownames(meta), ]
-  }
-
-  meta[[args$type_column]] <- trimws(meta[[args$type_column]])
-
-  # Case-insensitive matching with any of the tumor values
-  tumor_samples <- rownames(meta[toupper(meta[[args$type_column]]) %in% toupper(tumor_value_vector), ])
-
-  if (length(tumor_samples) == 0) {
-    cat("ERROR: No tumor samples found.\n")
-    cat("Available values in", args$type_column, "column:\n")
-    print(table(meta[[args$type_column]]))
-    cat("\nSearched for (case-insensitive):", paste(tumor_value_vector, collapse = ", "), "\n")
-    stop("No tumor samples found")
-  }
-
-  meta <- meta[tumor_samples, , drop = FALSE]
-  otu_raw <- otu_raw[tumor_samples, , drop = FALSE]
-
-  message("INFO: ", nrow(meta), " tumor samples remaining.")
-}
-
-# Verify required columns
-required_cols <- c(args$batch_column, covariate_vector)
-missing_cols <- setdiff(required_cols, colnames(meta))
-if (length(missing_cols) > 0) {
-  stop("ERROR: Missing required columns: ", paste(missing_cols, collapse=", "))
-}
 
 predictors  <- c(args$batch_column, covariate_vector)
 rhs_formula <- reformulate(predictors)
@@ -1196,10 +744,7 @@ cat(strrep("=", 70), "\n\n")
 cache_file <- file.path(corr_dir, "ConQuR_tuned.tsv")
 param_file <- file.path(corr_dir, "ConQuR_tuned_parameters.txt")
 
-if (file.exists(cache_file)) {
-  message("SKIP: ConQuR_tuned.tsv already exists (cached)")
-  tables$ConQuR_tuned <- load_table(cache_file)
-} else {
+{
   # Dispatch based on --method argument
   if (args$method == "vanilla") {
     cat("INFO: Using VANILLA ConQuR method\n")
@@ -1219,8 +764,10 @@ if (file.exists(cache_file)) {
   }
   
   if (result$success) {
+    matrix_ok(result$data, counts = TRUE)
+    assert_same_matrix_ids(result$data, otu_raw)
     tables$ConQuR_tuned <- result$data
-    write_status("corrected", "ConQuR completed")
+    write_status("in_progress", "ConQuR returned; required downstream outputs not yet complete")
     
     # Save results
     save_table(result$data, cache_file)
@@ -1234,7 +781,7 @@ if (file.exists(cache_file)) {
     cat("\nQuality Metrics:\n")
     cat(sprintf("  Baseline Batch R²:     %.4f\n", result$baseline_r2))
     cat(sprintf("  Final Batch R²:        %.4f\n", result$final_r2))
-    cat(sprintf("  R² reduction:          %.1f%%\n", result$r2_reduction * 100))
+    cat(sprintf("  R² reduction:          %.1f%%\n", report_reduction_percent(result$baseline_r2, result$final_r2)))
     if (!is.null(result$phase1_r2)) {
       cat(sprintf("  Phase 1 Batch R²:      %.4f\n", result$phase1_r2))
     }
@@ -1292,10 +839,7 @@ cat(strrep("=", 70), "\n\n")
 
 ## PERMANOVA summary
 sum_path <- file.path(dirname(args$prefix), "permanova_summary.tsv")
-if (file.exists(sum_path)){
-  message("SKIP: permanova_summary.tsv already exists")
-  quit(status = 0)
-}
+if (file.exists(sum_path)) stop("Existing PERMANOVA output: use a fresh output directory")
 
 ## Main loop
 permsum <- list()
@@ -1316,7 +860,7 @@ for (tag in names(tables)){
     for (tr in names(norm_res)){
       if (!is.null(norm_res[[tr]])) {
         permsum[[length(permsum)+1]] <- run_permanova(
-              norm_res[[tr]], meta, rhs_formula, "euclidean") %>%
+              norm_res[[tr]], meta, rhs_formula, "euclidean", transformed = TRUE) %>%
               mutate(Source = tag, Transform = tr)
       }
     }
@@ -1326,6 +870,9 @@ for (tag in names(tables)){
 }
 
 bind_rows(permsum) %>% save_table(sum_path)
+write_batch_records(result, otu_raw, predictors, args)
+if ("ConQuR_tuned" %in% names(tables))
+  write_status("corrected", "ConQuR and all required normalization/evaluation outputs completed")
 
 cat("\n", strrep("=", 70), "\n")
 cat("PIPELINE COMPLETED\n")

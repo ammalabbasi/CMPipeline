@@ -5,6 +5,7 @@ name with spaces replaced by underscores (so it matches the Bracken tables exact
 "Homo_sapiens" for the competitive human genome.
 """
 import re
+from count_tables import read_counts
 
 HUMAN_LABEL = "Homo_sapiens"
 BRACKEN_SUFFIX = re.compile(r"\.bracken\.[GS](\.mpa)?\.krakenreport\.txt$")
@@ -46,16 +47,7 @@ def read_species_table(path):
     Accepts the consensus output (first column clade_name) or a raw combine_mpa table
     (first column #Classification). Rows without an s__ level are ignored.
     """
-    with open(path) as fh:
-        header = fh.readline().rstrip("\n").split("\t")
-        samples = [sample_name(c) for c in header[1:]]
-        rows = {}
-        for line in fh:
-            f = line.rstrip("\n").split("\t")
-            if len(f) < 2 or species_from_clade(f[0]) is None:
-                continue
-            rows[f[0]] = {s: float(v or 0) for s, v in zip(samples, f[1:])}
-    return samples, rows
+    return read_counts(path, "s")
 
 
 def read_groups(path):

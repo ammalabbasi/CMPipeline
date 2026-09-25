@@ -100,15 +100,14 @@ Each tool environment is built from an exact lockfile, `conda_envs/lock/<env>.li
 `conda_envs/build_envs.sbatch` regenerates the lockfiles. A pre-existing environment such as
 `nf-env` may be used to launch Nextflow, but tool environments are still built from the lockfiles.
 
-**Batch correction is the exception: it runs in a pre-built environment**,
-`--batch_corr_env` (on TSCC,
-`/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/envs/batch_correction_20260923`).
-ConQuR is not packaged for conda, so an environment built from the lockfile alone would lack it.
-`sbatch conda_envs/build_envs.sbatch` builds that environment and runs
-`scripts/install_conqur.R` in it, which installs cqrReg 1.2.1 and the `ivartb/ConQuR_par` fork
-of ConQuR at the commit in `--conqur_sha`. Before batch correction starts, the workflow checks
-that ConQuR is installed **at that exact commit** and stops with the command to fix it
-otherwise. On another site, build the environment the same way and point `--batch_corr_env` at it.
+**Batch correction requires a prepared environment**, supplied with `--batch_corr_env`.
+Build a fresh user-owned prefix on a compute node with
+`bash scripts/setup_batch_env.sh --prefix /absolute/new/prefix`.
+This installs the locked Conda environment and checksum-verified cqrReg/ConQuR sources.
+The workflow checks the installed ConQuR commit before execution.
+Only the TSCC profile supplies a site-specific shared prefix; other profiles require
+an explicit prefix. See [batch setup and reproducibility](running/batch_setup_and_reproducibility.md)
+for installation, offline source-cache options, execution and reporting limits.
 
 ---
 [Back to the README](../README.md)

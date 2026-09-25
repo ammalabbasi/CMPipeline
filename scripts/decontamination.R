@@ -279,17 +279,24 @@ zero_total_samples <- names(sample_totals)[sample_totals == 0]
 library_totals <- NULL
 if (!is.null(args$library_table) && nzchar(args$library_table)) {
   lib <- read_table_strict(args$library_table, "library table")
-  if (all(c("sample", "bracken_genus_total") %in% names(lib))) {
-    # bracken_library_sizes.tsv from consensus_taxa
-    library_totals <- setNames(suppressWarnings(as.numeric(lib$bracken_genus_total)), lib$sample)
-  } else {
-    # An UNMASKED taxon table (first column = taxon, one column per sample): library = column sum.
-    # Used when consensus is skipped, where no library-sizes file exists (audit A10/A07).
-    lib_cols <- names(lib)[-1]
-    lib_names <- sub("\\.bracken\\.[GS](\\.mpa)?\\.krakenreport\\.txt$", "", lib_cols)
-    library_totals <- setNames(vapply(lib_cols, function(c) sum(suppressWarnings(as.numeric(lib[[c]])), na.rm = TRUE),
-                                      numeric(1)), lib_names)
+  required_library_columns <- c("sample", "bracken_genus_total")
+  if (!all(required_library_columns %in% names(lib))) {
+    stopf("Library table requires sample and bracken_genus_total columns; raw taxon tables are not library sizes")
   }
+  validate_exact_strings(lib$sample, "Library sample IDs")
+  if (anyDuplicated(lib$sample)) stopf("Duplicate library sample IDs: %s", collapse_values(lib$sample[duplicated(lib$sample)]))
+  for (column in intersect(c("bracken_genus_total", "bracken_species_total"), names(lib))) {
+    values <- suppressWarnings(as.numeric(lib[[column]]))
+    invalid <- is.na(values) | !is.finite(values) | values < 0 |
+      abs(values - round(values)) > .Machine$double.eps^0.5
+    if (any(invalid)) stopf("Invalid library counts in %s for samples: %s", column, collapse_values(lib$sample[invalid]))
+    lib[[column]] <- round(values)
+  }
+  missing_library <- setdiff(sample_columns, lib$sample)
+  if (length(missing_library) && !args$allow_unknown_library) {
+    stopf("Library table missing sample IDs: %s", collapse_values(missing_library))
+  }
+  library_totals <- setNames(lib$bracken_genus_total, lib$sample)
 }
 if (!is.finite(args$min_library) || args$min_library < 0) stopf("--min_library must be >= 0")
 insufficient_library_samples <- character()
@@ -582,7 +589,9 @@ for (i in seq_len(nrow(filter_report))) {
     filter_report$terminal_reason[i] <- "all_zero_after_declared_filters"
   } else {
     filter_report$final_action[i] <- "retain"
-    if (filter_report$detected_batch_count[i] > 0L) {
+    if (!contaminants_final$callable[match(taxon_id, contaminants_final$taxon_id)]) {
+      filter_report$terminal_reason[i] <- "retained_not_callable"
+    } else if (filter_report$detected_batch_count[i] > 0L) {
       filter_report$terminal_reason[i] <- sprintf(
         "contaminant_recurrence_below_%d_batches", args$min_batches
       )
@@ -682,6 +691,7 @@ tryCatch({
   grDevices::dev.off()
 })
 
+analysis_status <- if (any(contaminants_final$callable)) "evaluated" else "insufficient_evidence"
 summary_lines <- c(
   "DECONTAMINATION SUMMARY",
   "=======================",
@@ -701,6 +711,8 @@ summary_lines <- c(
   sprintf("Selected controls: %d", sum(validated_roles == "control")),
   sprintf("Eligible batches: %d", length(eligible_batches)),
   sprintf("Taxa after abundance/prevalence filters: %d", length(evaluated_taxa)),
+  sprintf("Analysis status: %s", analysis_status),
+  sprintf("Callable taxa: %d / %d", sum(contaminants_final$callable), nrow(contaminants_final)),
   sprintf("Final contaminants: %d", length(final_contaminants)),
   sprintf("Final retained taxa: %d", nrow(final_counts))
 )
@@ -713,7 +725,7 @@ conda_history <- if (nzchar(conda_prefix)) file.path(conda_prefix, "conda-meta",
 script_completed_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
 manifest <- data.frame(
   key = c(
-    "status", "prefix", "start_mode", "taxonomic_rank", "taxon_column", "sample_id_column",
+    "status", "analysis_status", "prefix", "start_mode", "taxonomic_rank", "taxon_column", "sample_id_column",
     "batch_column", "type_column", "control_role", "positive_values", "control_values",
     "unselected_type_policy", "zero_total_policy", "unevaluable_policy", "min_library",
     "allow_unknown_library", "library_table_sha256",
@@ -725,7 +737,7 @@ manifest <- data.frame(
     "phyloseq_version", "optparse_version", "digest_version", "started_utc", "completed_utc"
   ),
   value = c(
-    "completed", args$prefix, args$start_mode, args$taxonomic_rank, args$taxon_column,
+    "completed", analysis_status, args$prefix, args$start_mode, args$taxonomic_rank, args$taxon_column,
     args$sample_id_column, args$batch_column, args$type_column, args$control_role,
     paste(positive_values, collapse = ","), paste(control_values, collapse = ","),
     args$unselected_type_policy, args$zero_total_policy, args$unevaluable_policy, args$min_library,

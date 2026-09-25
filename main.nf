@@ -110,6 +110,7 @@ params.batch_corr_covariates = "age_diag,sex,bmi"  // Metadata columns ConQuR ad
                                                    // named column must exist in --metadata_file
 params.tumor_only = false  // have matched tumor/normal, keep both
 params.phase = "auto"
+params.batch_corr_seed = 1
 params.r2_threshold = 0.25
 params.bracken_read_length = 50  // Must match the read length used to build the Bracken database
 // Bracken -t: the minimum reads a taxon needs to be re-estimated -- a THRESHOLD, not a thread
@@ -214,7 +215,7 @@ params.decontam_env = "${projectDir}/conda_envs/lock/decontam_env.linux-64.txt"
 params.validation_env = "${projectDir}/conda_envs/lock/validation_env.linux-64.txt"
 // Batch correction runs in a PRE-BUILT env (lockfile + cqrReg 1.2.1 + pinned ConQuR, built by
 // conda_envs/build_envs.sbatch): a fresh build from the lockfile alone would lack ConQuR (audit D04).
-params.batch_corr_env = "/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/envs/batch_correction_20260923"
+params.batch_corr_env = null  // Set --batch_corr_env to the prefix built by scripts/setup_batch_env.sh
 params.antismash_env = "${projectDir}/conda_envs/antismash_env.yml"
 params.batch_corr_method = "tune"  // ConQuR mode: "tune" (auto-phased Tune_ConQuR) or "vanilla"
 
@@ -250,7 +251,7 @@ include { process_metaphlan; process_bracken; consensus_taxa } from './Modules/p
 include { humann3; merge_humann3 } from './Modules/humann3.nf'
 
 // Preprocessing modules (optional)
-include { Decontamination } from './Modules/decontamination.nf'
+include { Decontamination; aggregateDecontaminatedSpecies } from './Modules/decontamination.nf'
 include { validationSpeciesList; buildValidationRef; alignForValidation; applyValidationMask; compareDecontamLevels } from './Modules/alignment_validation.nf'
 include { BatchCorrection } from './Modules/batch_correction.nf'
 
@@ -292,6 +293,34 @@ def requirePathParam(String name, value, String why) {
 // param after the first ("defined multiple times -- Assignments following the
 // first are ignored"). So the entry workflow resolves each flag into a local via
 // boolParam() below, and reads the local rather than the param.
+
+def metadataColumns(String header) {
+    def delimiter = header.contains('\t') ? '\t' : ','
+    def columns = []
+    def field = new StringBuilder()
+    def quoted = false
+    for (int i = 0; i < header.length(); i++) {
+        def c = header.substring(i, i + 1)
+        if (c == '"') {
+            if (quoted && i + 1 < header.length() && header.substring(i + 1, i + 2) == '"') {
+                field.append('"')
+                i++
+            } else {
+                quoted = !quoted
+            }
+        } else if (c == delimiter && !quoted) {
+            columns << field.toString()
+            field.setLength(0)
+        } else {
+            field.append(c)
+        }
+    }
+    if (quoted) error "Unclosed quote in metadata header"
+    columns << field.toString()
+    if (columns.any { !it } || columns.unique(false).size() != columns.size())
+        error "Blank or duplicate metadata header"
+    return columns
+}
 
 def requireRoleParam(String name, value) {
     // A bare flag arrives as Boolean true, the same trap the path params hit.
@@ -373,9 +402,9 @@ workflow {
 
     if (runValidation) {
         // Validation aligns each sample's host-depleted reads, so it needs the full run.
-        if (params.start_from != 'beginning' || skipClassification || skipHostDepletion) {
-            error "--run_alignment_validation needs --start_from beginning with host depletion and " +
-                  "classification on: it aligns each sample's host-depleted reads"
+        if (params.start_from != 'beginning' || skipClassification) {
+            error "--run_alignment_validation needs --start_from beginning with classification on; " +
+                  "--skip_host_depletion accepts already depleted reads"
         }
         if (params.validation_refseq_snapshot && !(params.validation_refseq_snapshot.toString() ==~ /\d{4}-\d{2}/)) {
             error "--validation_refseq_snapshot must be YEAR-MONTH, e.g. 2026-09 (got '${params.validation_refseq_snapshot}')"
@@ -478,7 +507,7 @@ workflow {
         // after classification has run.
         if (params.metadata_file && file(params.metadata_file).exists()) {
             def header = file(params.metadata_file).withReader { it.readLine() } ?: ''
-            def cols = header.split(header.contains('\t') ? '\t' : ',').collect { it.trim() }
+            def cols = metadataColumns(header)
             [params.sample_id_column, params.type_column, params.batch_column].findAll { it }.each { c ->
                 if (!(c in cols)) error "--metadata_file has no '${c}' column (columns: ${cols.join(', ')})"
             }
@@ -515,6 +544,10 @@ workflow {
     // Batch correction's own contract, checked at launch rather than when the task starts after
     // every upstream stage (audit C04/C17; decision 16 for the covariates).
     if (runBatchCorrection) {
+        requirePathParam('batch_corr_env', params.batch_corr_env,
+            'for batch correction; build a user-owned prefix with scripts/setup_batch_env.sh')
+        if (!params.batch_corr_seed.toString().isInteger() || params.batch_corr_seed.toString().toLong() < 0 || params.batch_corr_seed.toString().toLong() > 2147483647L)
+            error "--batch_corr_seed must be an integer between 0 and 2147483647"
         // No input table for batch correction: decided HERE, before any channel exists. Raised
         // later inside the workflow, the error raced the sample-sheet reader, which could surface
         // a misleading "Sample sheet has no data rows" first (audit C20).
@@ -547,7 +580,7 @@ workflow {
         def metaFile = file(params.metadata_file)
         if (!metaFile.exists()) error "--metadata_file does not exist: ${params.metadata_file}"
         def header = metaFile.withReader { it.readLine() } ?: ''
-        def cols = header.split(header.contains('\t') ? '\t' : ',').collect { it.trim() }
+        def cols = metadataColumns(header)
         def needed = [params.sample_id_column, params.batch_column] + covariates
         if (params.tumor_only.toString() == 'true') needed << params.type_column
         def missing = needed.findAll { it && !(it in cols) }.unique()
@@ -664,10 +697,6 @@ workflow {
 
     if (params.start_from == 'beginning') {
         // Full pipeline from BAM files
-
-        if (skipHostDepletion && !skipClassification) {
-            error "--skip_host_depletion requires --skip_classification true; classification consumes mapped reads produced by Module 1"
-        }
 
         // ------------------- STEP1: HOST DEPLETION ---------------------- //
 
@@ -812,6 +841,7 @@ workflow {
             FASTQCHG38(MAPPED_READS_MULTI.Hg38)
             FASTQCT2T(MAPPED_READS_MULTI.T2T)
             FASTQCPANGENOME(MAPPED_READS_MULTI.PAN)
+            MAPPED_READS_MULTI.PAN.set { CLASSIFICATION_READS }
 
             // Cohort QC report. fastp's per-sample JSON carries reads in/out, duplication
             // and adapter stats; the five FastQC passes cover raw, filtered, and each
@@ -835,6 +865,30 @@ workflow {
             // and the MultiQC report answer different questions.
             qcParts << filterReads.out.fastp_json
             qcParts << mapReads.out.counts
+        } else if (!skipClassification) {
+            // Official entry from the single normalized FASTQ emitted by host depletion.
+            Channel.fromPath(params.sample, checkIfExists: true)
+                .splitCsv(header: true)
+                .map { row ->
+                    def id = row.patient
+                    def reads = row.fastq_1
+                    if (!id || !(id ==~ /[A-Za-z0-9._-]+/))
+                        error "Host-depleted sample sheet needs an exact valid patient ID"
+                    if (!reads || row.fastq_2 || row.bam || row.cram)
+                        error "Host-depleted input requires patient,fastq_1 only (one normalized FASTQ per sample)"
+                    tuple(id, file(reads, checkIfExists: true))
+                }
+                .toList()
+                .map { rows ->
+                    if (!rows) error "Host-depleted sample sheet has no data rows"
+                    def ids = rows.collect { it[0] }
+                    if (ids.unique(false).size() != ids.size()) error "Duplicate host-depleted sample IDs"
+                    rows
+                }
+                .flatMap()
+                .set { CLASSIFICATION_READS }
+            qcParts << CLASSIFICATION_READS.map { it[0] }.collectFile(name: 'expected_samples.txt', newLine: true, sort: true)
+            log.info "Using host-depleted FASTQ inputs without filtering or host mapping"
         } else {
             log.info "Skipping host depletion step"
         }
@@ -843,7 +897,7 @@ workflow {
 
         if (!skipClassification) {
             // BRACKEN
-            Bracken(MAPPED_READS_MULTI.PAN, depsOf(["${params.scripts}/kreport2mpa.py"], [params.kraken_db]))
+            Bracken(CLASSIFICATION_READS, depsOf(["${params.scripts}/kreport2mpa.py"], [params.kraken_db]))
             Bracken.out.reports.set { BRACKEN_OUT }
 
             // Collect all kraken reports once all samples are done
@@ -855,7 +909,7 @@ workflow {
             .set {Bracken_mpa_files}
 
             // Run process_bracken once all reports are available
-            process_bracken(Bracken_mpa_files, depsOf(["${params.scripts}/combine_mpa.py"])).set { BRACKEN_FILES }
+            process_bracken(Bracken_mpa_files, depsOf(["${params.scripts}/combine_mpa.py", "${params.scripts}/prepare_bracken_tables.py", "${params.scripts}/count_tables.py"])).set { BRACKEN_FILES }
 
             // QC summary inputs from classification: the KrakenUniq report carries the
             // microbial read count the consensus gate uses, and the Bracken genus/species
@@ -896,7 +950,7 @@ workflow {
                 // visible per sample in the QC summary (metaphlan_genera is NA when skipped).
                 // Taking the profile from the channel rather than the published METAPHLAN4
                 // directory avoids racing metaphlan4 itself.
-                MAPPED_READS_MULTI.PAN
+                CLASSIFICATION_READS
                     .join(METAPHLAN_PROFILES)
                     .set { HUMANN3_INPUT }
                 HUMANN3_INPUT.count().subscribe { n ->
@@ -928,7 +982,7 @@ workflow {
         // Always create bracken_file_tuple when classification is run (needed for both consensus and skip_consensus paths)
         if (!skipClassification) {
             BRACKEN_FILES
-                .map { bracken_genus_file, bracken_species_file -> tuple(bracken_genus_file, bracken_species_file) }
+                .map { bracken_genus_file, bracken_species_file, library_sizes -> tuple(bracken_genus_file, bracken_species_file) }
                 .set { bracken_file_tuple }
         }
 
@@ -954,7 +1008,7 @@ workflow {
             // "Multi-channel output cannot be applied to operator map". Select the one
             // table the requested rank needs, and take it from the channel rather than
             // re-reading it out of publishDir (which raced with the publish).
-            consensus_taxa(consensus_input, depsOf(["${params.scripts}/compute_consensus_taxa.py"]))
+            consensus_taxa(consensus_input, depsOf(["${params.scripts}/compute_consensus_taxa.py", "${params.scripts}/count_tables.py"]))
             if (params.taxonomic_rank == 'species') {
                 consensus_taxa.out[2].set { CONSENSUS_OUTPUT }
             } else {
@@ -974,7 +1028,7 @@ workflow {
             if (!skipConsensus) {
                 consensus_taxa.out[2].set { VALIDATION_TABLE }
             } else {
-                BRACKEN_FILES.map { genus_file, species_file -> species_file }.set { VALIDATION_TABLE }
+                BRACKEN_FILES.map { genus_file, species_file, library_sizes -> species_file }.set { VALIDATION_TABLE }
             }
             def groupsFile = params.validation_groups ? file(params.validation_groups, checkIfExists: true) : []
             def taxdb = params.validation_ref ? [] :
@@ -989,19 +1043,19 @@ workflow {
                         file("${refDir}/missing_species.tsv", checkIfExists: true)))
                     .first().set { VALIDATION_REF }
             } else {
-                validationSpeciesList(VALIDATION_TABLE, taxdb, depsOf(["${params.scripts}/validation_species_list.py", "${params.scripts}/validation_common.py", "${params.scripts}/build_validation_ref.py"]))
+                validationSpeciesList(VALIDATION_TABLE, taxdb, depsOf(["${params.scripts}/validation_species_list.py", "${params.scripts}/validation_common.py", "${params.scripts}/count_tables.py", "${params.scripts}/build_validation_ref.py"]))
                 buildValidationRef(validationSpeciesList.out.species)
                 buildValidationRef.out.ref.first().set { VALIDATION_REF }
             }
-            MAPPED_READS_MULTI.PAN
+            CLASSIFICATION_READS
                 .collate(params.validation_batch_size.toString().toInteger())
                 .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
                 .set { VALIDATION_BATCHES }
             alignForValidation(VALIDATION_BATCHES, VALIDATION_REF,
                                VALIDATION_TABLE.first(), groupsFile,
-                               depsOf(["${params.scripts}/validation_score.py", "${params.scripts}/validation_common.py"]))
+                               depsOf(["${params.scripts}/validation_score.py", "${params.scripts}/validation_common.py", "${params.scripts}/count_tables.py"]))
             applyValidationMask(VALIDATION_TABLE, alignForValidation.out.stats.flatten().collect(), groupsFile,
-                                depsOf(["${params.scripts}/apply_validation_mask.py", "${params.scripts}/validation_common.py"]))
+                                depsOf(["${params.scripts}/apply_validation_mask.py", "${params.scripts}/validation_common.py", "${params.scripts}/count_tables.py"]))
             applyValidationMask.out.species.set { VALIDATED_SPECIES }
             applyValidationMask.out.genus.set { VALIDATED_GENUS }
             applyValidationMask.out.report.set { VALIDATION_MASK_REPORT }
@@ -1014,96 +1068,40 @@ workflow {
     // ============================================================================
 
     if (runDecontam && params.start_from != 'batch_correction') {
-        // Check if starting from decontamination step
-        if (runValidation) {
-            // Decontam runs twice on the validated (masked) tables: species is primary, the genus
-            // roll-up is the continuity check. Decided 2026-09-23 (Ammal).
-            if (!params.metadata_file) {
-                error "ERROR: When using --run_decontam, you must provide:\n  --metadata_file <path>"
-            }
-            def meta = file(params.metadata_file, checkIfExists: true)
-            // Library sizes: consensus's bracken_library_sizes.tsv, or -- consensus skipped -- the
-            // UNMASKED Bracken species table itself (its column sums are the libraries). Never an
-            // empty [] through .combine(), which flattened it away and crashed the map (audit A10).
-            if (!skipConsensus) {
-                CONSENSUS_LIBRARY_SIZES.set { VALIDATION_LIB_SIZES }
-            } else {
-                VALIDATION_TABLE.set { VALIDATION_LIB_SIZES }
-            }
-            VALIDATED_SPECIES.combine(VALIDATION_LIB_SIZES)
-                .map { t, lib -> tuple('validated_species', t, meta, lib, 'species') }
-                .mix(VALIDATED_GENUS.combine(VALIDATION_LIB_SIZES)
-                     .map { t, lib -> tuple('validated_genus', t, meta, lib, 'genus') })
-                .set { ch_for_decontam }
-        } else if (params.start_from == 'decontam') {
-            // Load data from parameters for decontamination entry point
-            if (!params.consensus_otu_table || !params.metadata_file) {
-                error "ERROR: When starting from 'decontam', you must provide:\n" +
-                      "  --consensus_otu_table <path>\n" +
-                      "  --metadata_file <path>"
-            }
-            Channel.of(tuple(
-                'decontam_run',
-                file(params.consensus_otu_table),
-                file(params.metadata_file),
+        def meta = requirePathParam('metadata_file', params.metadata_file, 'for decontamination')
+        if (params.start_from == 'decontam') {
+            requirePathParam('consensus_otu_table', params.consensus_otu_table, 'for standalone decontamination')
+            Channel.of(tuple('decontam_run', file(params.consensus_otu_table), meta,
                 params.decontam_library_sizes ? file(params.decontam_library_sizes, checkIfExists: true) : [],
-                params.taxonomic_rank
-            )).set { ch_for_decontam }
-        } else if (params.start_from == 'beginning' && !skipConsensus) {
-            if (!params.metadata_file) {
-                error "ERROR: When using --run_decontam, you must provide:\n" +
-                      "  --metadata_file <path>"
+                params.taxonomic_rank)).set { ch_for_decontam }
+        } else if (params.start_from == 'beginning' && !skipClassification) {
+            // Species is the primary decontamination input, independent of the desired final rank.
+            BRACKEN_FILES.map { genus, species, library -> library }.set { DECONTAM_LIBRARY }
+            if (runValidation) {
+                VALIDATED_SPECIES.set { PRIMARY_SPECIES }
+            } else if (!skipConsensus) {
+                consensus_taxa.out[2].set { PRIMARY_SPECIES }
+            } else {
+                BRACKEN_FILES.map { genus, species, library -> species }.set { PRIMARY_SPECIES }
             }
-            CONSENSUS_OUTPUT
-                .combine(CONSENSUS_LIBRARY_SIZES)
-                .map { consensus_file, library_sizes ->
-                    tuple('consensus_run', consensus_file,
-                          file(params.metadata_file, checkIfExists: true), library_sizes,
-                          params.taxonomic_rank)
-                }
-                .set { ch_for_decontam }
-        } else if (params.start_from == 'beginning' && skipConsensus) {
-            if (!params.metadata_file) {
-                error "ERROR: When using --run_decontam with --skip_consensus, you must provide:\n" +
-                      "  --metadata_file <path>"
-            }
-            log.info "Skipping consensus taxa - using Bracken ${params.taxonomic_rank ?: 'genus'} output directly for decontamination"
-            BRACKEN_FILES
-                .map { bracken_genus_file, bracken_species_file ->
-                    def selected = params.taxonomic_rank == 'species' ? bracken_species_file : bracken_genus_file
-                    // the unmasked Bracken table is its own library source (audit A07/A10)
-                    tuple('bracken_run', selected, file(params.metadata_file, checkIfExists: true), selected,
-                          params.taxonomic_rank)
-                }
+            PRIMARY_SPECIES.combine(DECONTAM_LIBRARY)
+                .map { table, library -> tuple('species_run', table, meta, library, 'species') }
                 .set { ch_for_decontam }
         } else {
-            // A named contract error instead of logging and then dereferencing an undefined channel (C20).
-            error "Decontamination cannot run with --start_from ${params.start_from}: use --start_from beginning " +
-                  "(classification on) or --start_from decontam with --consensus_otu_table and --metadata_file"
+            error "Decontamination needs classification output or --start_from decontam"
         }
-
         Decontamination(ch_for_decontam, depsOf([params.decontam_script]))
-        // Decontam roles/status per sample into the QC summary (audit A09/C14). With validation on,
-        // decontam runs at both levels; only the primary level (--taxonomic_rank) reports, so the QC
-        // columns are deterministic.
-        qcParts << Decontamination.out.decontaminated
-            .filter { !runValidation || it[0] == "validated_${params.taxonomic_rank}".toString() }
-            .map { it[3] }   // <prefix>.sample_validation.tsv
-        if (runValidation) {
-            // Batch correction continues from the level --taxonomic_rank asks for.
-            Decontamination.out.for_batch_correction
-                .filter { it[0] == "validated_${params.taxonomic_rank}" }
-                .set { ch_for_batch_corr }
-            Decontamination.out.decontaminated
-                .map { it -> tuple(it[0], it[6]) }            // (prefix, contaminants_final.tsv)
-                .branch {
-                    species: it[0] == "validated_species"
-                    genus: it[0] == "validated_genus"
-                }
-                .set { FINALS }
-            compareDecontamLevels(FINALS.species.map { it[1] }, FINALS.genus.map { it[1] },
-                                  depsOf(["${params.scripts}/compare_decontam_levels.py", "${params.scripts}/validation_common.py"]))
+        qcParts << Decontamination.out.decontaminated.map { it[3] }
+        if (params.start_from == 'beginning' || params.taxonomic_rank == 'species') {
+            aggregateDecontaminatedSpecies(Decontamination.out.for_batch_correction,
+                depsOf(["${params.scripts}/aggregate_decontaminated_species.py", "${params.scripts}/count_tables.py"]))
+            if (params.taxonomic_rank == 'genus') {
+                aggregateDecontaminatedSpecies.out.genus.set { ch_for_batch_corr }
+            } else {
+                Decontamination.out.for_batch_correction.set { ch_for_batch_corr }
+            }
         } else {
+            // Preserve explicitly requested standalone genus analysis; it is not the species-first full route.
             Decontamination.out.for_batch_correction.set { ch_for_batch_corr }
         }
     }
@@ -1158,7 +1156,7 @@ workflow {
             }
             log.info "Skipping consensus taxa - using Bracken ${params.taxonomic_rank ?: 'genus'} output directly for batch correction"
             BRACKEN_FILES
-                .map { bracken_genus_file, bracken_species_file ->
+                .map { bracken_genus_file, bracken_species_file, library_sizes ->
                     def selected = params.taxonomic_rank == 'species' ? bracken_species_file : bracken_genus_file
                     tuple('bracken_run', selected, file(params.metadata_file, checkIfExists: true))
                 }
@@ -1169,7 +1167,7 @@ workflow {
                   "--decontam_otu_table and --metadata_file (audit C20)"
         }
 
-        BatchCorrection(ch_batch_input, depsOf([params.batch_corr_script, "${params.scripts}/install_conqur.R"]))
+        BatchCorrection(ch_batch_input, depsOf([params.batch_corr_script, "${params.scripts}/batch_contract.R", "${params.scripts}/batch_reporting.R", "${params.scripts}/install_conqur.R"]))
     }
 
     // ============================================================================

@@ -72,7 +72,8 @@ process process_bracken {
     val deps
     output:
     tuple path("bracken.genus.mpa.report.txt"),
-          path("bracken.species.mpa.report.txt")
+          path("bracken.species.mpa.report.txt"),
+          path("bracken_library_sizes.tsv")
 
     script:
     // Prepare space-separated file name lists for genus and species
@@ -102,6 +103,12 @@ process process_bracken {
     else
         echo "No species files found." > bracken.species.mpa.report.txt
     fi
+    mv bracken.genus.mpa.report.txt raw.genus.tsv
+    mv bracken.species.mpa.report.txt raw.species.tsv
+    python "${params.scripts}/prepare_bracken_tables.py" \\
+        --genus raw.genus.tsv --species raw.species.tsv \\
+        --out_genus bracken.genus.mpa.report.txt --out_species bracken.species.mpa.report.txt \\
+        --out_library bracken_library_sizes.tsv
     """    
 }
 

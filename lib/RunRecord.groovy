@@ -90,10 +90,11 @@ class RunRecord {
         if (fromStart && !flags.skip_classification) requested << 'classification'
         if (fromStart && !flags.skip_consensus)      requested << 'consensus'
         if (fromStart && !flags.skip_classification && !flags.skip_humann3) requested << 'humann3'
-        if (!flags.skip_multiqc)        requested << 'multiqc'
+        if (fromStart && !flags.skip_host_depletion && !flags.skip_multiqc) requested << 'multiqc'
+        if (fromStart && flags.skip_host_depletion && !flags.skip_classification) requested << 'input:host_depleted_fastq'
         if (flags.run_decontam && params.start_from != 'batch_correction') requested << 'decontamination'
         if (flags.run_batch_correction) requested << 'batch_correction'
-        if (params.pangenome_db)        requested << 'pangenome_depletion'
+        if (fromStart && !flags.skip_host_depletion && params.pangenome_db) requested << 'pangenome_depletion'
         if (flags.run_alignment_validation) requested << 'alignment_validation'   // audit C06
         if (!flags.skip_cohort_report)  requested << 'cohort_report'              // audit C06
         return requested

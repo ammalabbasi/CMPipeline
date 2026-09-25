@@ -99,10 +99,19 @@ process Bracken {
     #      arithmetic. Root's own clade count is the classified total.
     # taxName is trimmed before comparing, exactly as build_qc_summary.py does (audit A16), so the
     # gate and the QC column cannot disagree on a padded name.
-    MICROBIAL_READS=\$(awk -F '\t' '!/^#/ {n=\$9; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", n)} !/^#/ && n=="root"{print \$2+0; found=1; exit} END{if(!found) print 0}' "\${REPORT}")
-    if [[ "\${MICROBIAL_READS}" -eq 0 ]]; then
-        echo "WARN: no 'root' row found in \${REPORT}; treating as 0 classified reads" >&2
-    fi
+    MICROBIAL_READS=\$(awk -F '\t' '
+        !/^#/ {
+            n=\$9; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", n)
+            if(n=="root") {
+                found++; v=\$2; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", v)
+                if(NF!=9 || v !~ /^[0-9]+\$/) bad=1
+                total=v
+            }
+        }
+        END {
+            if(found!=1 || bad) { print "ERROR: expected exactly one valid KrakenUniq root count" > "/dev/stderr"; exit 1 }
+            print total
+        }' "\${REPORT}")
     echo "Bracken microbial reads for ${SAMPLE_NAME}: \${MICROBIAL_READS}"
     if [[ "\${MICROBIAL_READS}" -ge "${params.consensus_min_reads}" ]]; then
         gzip -c "${SAMPLE_NAME}.trimmed.fastq" > "${SAMPLE_NAME}.metaphlan.fastq.gz"

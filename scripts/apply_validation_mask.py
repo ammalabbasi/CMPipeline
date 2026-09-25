@@ -30,25 +30,50 @@ def main(argv=None):
     groups = read_groups(a.groups)
     samples, table = read_species_table(a.species_table)
 
-    status = {}          # (sample, taxon) -> status
+    status = {}
     header = None
-    # A sample is "seen" if its stats FILE exists: an all-zero sample legitimately has a
-    # header-only file (no taxon to score), and must not abort the cohort (audit B02).
-    seen_samples = {os.path.basename(p)[:-len(".validation_stats.tsv")] for p in a.stats}
-    with open(os.path.join(a.out_dir, "validation_stats.all.tsv"), "w") as allout:
-        for path in sorted(a.stats):
-            with open(path) as fh:
-                h = fh.readline()
-                if header is None:
-                    header = h; allout.write(h)
-                cols = h.rstrip("\n").split("\t")
-                for line in fh:
-                    allout.write(line)
-                    r = dict(zip(cols, line.rstrip("\n").split("\t")))
-                    status[(r["sample"], r["taxon"])] = r["status"]
-    missing = [s for s in samples if s not in seen_samples]
+    allowed = {"validated", "failed", "unsupported", "insufficient", "not_in_reference"}
+    expected = {(s, groups.get(label_of(species_from_clade(t)), label_of(species_from_clade(t))))
+                for t, counts in table.items() for s in samples if counts[s] > 0}
+    seen_samples = set()
+    records = []
+    for path in sorted(a.stats):
+        suffix = ".validation_stats.tsv"
+        name = os.path.basename(path)
+        if not name.endswith(suffix):
+            sys.exit(f"ERROR: invalid validation stats filename: {name}")
+        sample = name[:-len(suffix)]
+        if sample not in samples or sample in seen_samples:
+            sys.exit(f"ERROR: unknown or duplicate validation stats sample: {sample}")
+        seen_samples.add(sample)
+        with open(path) as fh:
+            h = fh.readline()
+            cols = h.rstrip("\n").split("\t")
+            if len(set(cols)) != len(cols) or not {"sample", "taxon", "status"} <= set(cols):
+                sys.exit(f"ERROR: invalid validation stats header: {path}")
+            if header is None:
+                header = h
+            elif header != h:
+                sys.exit(f"ERROR: inconsistent validation stats header: {path}")
+            for line in fh:
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) != len(cols):
+                    sys.exit(f"ERROR: invalid stats row width: {path}")
+                r = dict(zip(cols, fields))
+                key = (r["sample"], r["taxon"])
+                if r["sample"] != sample or key not in expected or key in status or r["status"] not in allowed:
+                    sys.exit(f"ERROR: missing, duplicate or invalid validation status: {key}")
+                status[key] = r["status"]
+                records.append(line)
+    missing = set(samples) - seen_samples
     if missing:
-        sys.exit(f"ERROR: no validation stats for {len(missing)} sample(s) of the species table, e.g. {missing[:3]}")
+        sys.exit(f"ERROR: no validation stats for sample(s): {sorted(missing)}")
+    missing_cells = expected - set(status)
+    if missing_cells:
+        sys.exit(f"ERROR: no validation status for positive sample/taxon cell(s): {sorted(missing_cells)[:3]}")
+    with open(os.path.join(a.out_dir, "validation_stats.all.tsv"), "w") as allout:
+        allout.write(header or "")
+        allout.writelines(records)
 
     masked = {}
     report = collections.defaultdict(lambda: collections.Counter())

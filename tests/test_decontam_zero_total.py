@@ -29,7 +29,7 @@ class ZeroTotalWiring(unittest.TestCase):
         self.assertIn("output_library_sizes", (ROOT / "scripts" / "compute_consensus_taxa.py").read_text())
         text = (ROOT / "main.nf").read_text()
         self.assertIn("consensus_taxa.out[4].set { CONSENSUS_LIBRARY_SIZES }", text)
-        self.assertIn(".combine(CONSENSUS_LIBRARY_SIZES)", text)
+        self.assertIn(".combine(DECONTAM_LIBRARY)", text)
         decon = (ROOT / "Modules" / "decontamination.nf").read_text()
         self.assertIn("path(library_sizes, stageAs:", decon)
         self.assertIn('--zero_total_policy "${params.decontam_zero_total_policy}"', decon)
@@ -43,6 +43,8 @@ class ZeroTotalWiring(unittest.TestCase):
 
 
 def _decontam_rscript():
+    if os.environ.get("CMP_TEST_RSCRIPT"):
+        return os.environ["CMP_TEST_RSCRIPT"]
     for env in glob.glob(str(ROOT / ".conda_cache" / "env-*")):
         if os.path.isdir(os.path.join(env, "lib", "R", "library", "decontam")):
             return os.path.join(env, "bin", "Rscript")
@@ -139,16 +141,10 @@ class ZeroTotalBehaviour(unittest.TestCase):
         r = self.run_r("--allow_unknown_library")
         self.assertEqual(r.returncode, 0, r.stderr[-500:])
 
-    def test_taxon_table_as_library_source(self):
-        """A10/A07: with consensus skipped, the unmasked table itself gives the library sizes;
-        an all-zero sample there has library 0, so it is excluded as insufficient_library."""
+    def test_raw_taxon_table_is_not_a_library_size_artifact(self):
         r = self.run_r("--library_table", "otu.tsv")
-        rows = [l.rstrip("\n").split("\t") for l in open(f"{self.dir}/t.sample_validation.tsv")] \
-            if os.path.exists(f"{self.dir}/t.sample_validation.tsv") else None
-        # batch 1 loses its three normals (library 0), so decontam stops on batch eligibility,
-        # naming the exclusions -- which is the correct outcome for truly empty libraries
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("3 zero-total sample(s) excluded", r.stderr)
+        self.assertIn("raw taxon tables are not library sizes", r.stderr)
 
     def test_contaminants_final_says_whether_a_taxon_was_callable(self):
         """A19: n_evaluable_batches and callable columns."""

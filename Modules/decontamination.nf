@@ -82,3 +82,20 @@ process Decontamination {
         --min_library ${params.decontam_min_library} ${unknown_arg} ${library_arg}
     """
 }
+
+process aggregateDecontaminatedSpecies {
+    label 'process_low'
+    conda "${params.consensus_taxa_env}"
+    publishDir path: { "${params.decontam_dir}/${prefix}" }, mode: 'copy', overwrite: true
+    input:
+    tuple val(prefix), path(species_table), path(metadata)
+    val deps
+    output:
+    tuple val(prefix), path("${prefix}.decontam_pkg_decontaminated.genus.csv"), path(metadata), emit: genus
+    script:
+    """
+    python "${params.scripts}/aggregate_decontaminated_species.py" \\
+        --input "${species_table}" --output "${prefix}.decontam_pkg_decontaminated.genus.csv" \\
+        --taxon_column "${params.taxon_column}"
+    """
+}

@@ -30,7 +30,11 @@ process BatchCorrection {
           path("normalized/*.tsv"),
           path("pcoa_plots/*"),
           path("permanova_summary.tsv"),
-          path("batch_correction_sample_status.tsv"), emit: corrected
+          path("batch_correction_sample_status.tsv"),
+          path("batch_correction_taxon_status.tsv"),
+          path("batch_correction_quality.tsv"),
+          path("batch_correction_methods.tsv"),
+          path("batch_correction_run_settings.tsv"), emit: corrected
 
     script:
     // `--tumor_only false` arrives as the String "false" on Nextflow 25+, which is
@@ -39,14 +43,18 @@ process BatchCorrection {
     def method_flag = params.batch_corr_method ?: "tune"
     def allow_flag = params.batch_corr_allow_uncorrected.toString() == 'true' ? "--allow_uncorrected" : ""
     """
+    export R_LIBS="\$CONDA_PREFIX/lib/R/library"
+    export R_LIBS_USER="\$CONDA_PREFIX/lib/R/library"
+    export R_LIBS_SITE="\$CONDA_PREFIX/lib/R/library"
+    export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
     # ConQuR is installed from GitHub, not from the conda YAML, so an environment built
     # only with `conda env create` is missing it. Fail here with the fix rather than
     # partway through the R script.
     # Presence is not enough: it must be the pinned fork the script was written against (audit A14).
-    Rscript -e 'if (!requireNamespace("ConQuR", quietly = TRUE)) stop("ConQuR is not installed in this environment (env: ", Sys.getenv("CONDA_PREFIX"), "). Run: Rscript ${params.scripts}/install_conqur.R with the batch-correction env active"); sha <- utils::packageDescription("ConQuR")\$RemoteSha; if (is.null(sha) || !startsWith(sha, "${params.conqur_sha}")) stop("ConQuR in this environment is not ivartb/ConQuR_par@${params.conqur_sha} (found: ", if (is.null(sha)) "no RemoteSha" else sha, "; env: ", Sys.getenv("CONDA_PREFIX"), "). Run: CONQUR_FORCE=1 Rscript ${params.scripts}/install_conqur.R")'
+    Rscript --vanilla -e 'if (!requireNamespace("ConQuR", quietly = TRUE)) stop("ConQuR is not installed in this environment (env: ", Sys.getenv("CONDA_PREFIX"), "). Run: Rscript ${params.scripts}/install_conqur.R with the batch-correction env active"); sha <- utils::packageDescription("ConQuR")\$RemoteSha; if (is.null(sha) || !startsWith(sha, "${params.conqur_sha}")) stop("ConQuR in this environment is not ivartb/ConQuR_par@${params.conqur_sha} (found: ", if (is.null(sha)) "no RemoteSha" else sha, "; env: ", Sys.getenv("CONDA_PREFIX"), "). Run: CONQUR_FORCE=1 Rscript ${params.scripts}/install_conqur.R")'
 
     # Every value quoted: the TCGA preset's type column is 'Sample Type_x' (audit A03).
-    Rscript "${params.batch_corr_script}" \\
+    Rscript --vanilla "${params.batch_corr_script}" \\
         --otu "${otu_table}" \\
         --meta "${metadata}" \\
         --prefix "${prefix}" \\
@@ -60,6 +68,8 @@ process BatchCorrection {
         ${tumor_only_flag} \\
         --phase ${params.phase} \\
         --r2_threshold ${params.r2_threshold} \\
-        --method ${method_flag}
+        --method ${method_flag} \\
+        --seed ${params.batch_corr_seed} \\
+        --threads ${task.cpus}
     """
 }

@@ -68,14 +68,18 @@ process filterReads {
     gzip -t "\$FILTERED"
 
     awk '
-        /"after_filtering"[[:space:]]*:/ { section=1; next }
-        section == 1 && /"total_reads"[[:space:]]*:/ {
-            value=\$0
-            gsub(/[^0-9]/, "", value)
+        /"after_filtering"[[:space:]]*:/ { section=1; blocks++; next }
+        section && /^[[:space:]]*}/ { section=0 }
+        section && /"total_reads"[[:space:]]*:/ {
+            found++; value=\$0
+            if(value !~ /^[[:space:]]*"total_reads"[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*,?[[:space:]]*\$/) bad=1
+            sub(/^[^:]*:[[:space:]]*/, "", value)
+            sub(/[[:space:]]*,?[[:space:]]*\$/, "", value)
+        }
+        END {
+            if(blocks!=1 || found!=1 || bad) { print "ERROR: missing or invalid fastp after_filtering.total_reads" > "/dev/stderr"; exit 1 }
             print value
-            exit
         }
     ' "${sampleID}.fastp.json" > "\$COUNT"
-    [[ -s "\$COUNT" ]] || echo 0 > "\$COUNT"
     """
 }

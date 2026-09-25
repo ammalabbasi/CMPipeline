@@ -20,7 +20,7 @@ cqr_version <- "1.2.1"
 # so the env can be rebuilt without CRAN or GitHub (cqrReg 1.2.1 leaves CRAN's main index as soon as
 # a newer version appears). Falls back to the network when the directory is absent.
 offline <- Sys.getenv("CONQUR_OFFLINE_DIR",
-                      unset = "/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/packages/conqur_offline")
+                      unset = "")
 offline_file <- function(name) {
     path <- file.path(offline, name)
     sums <- file.path(offline, "SHA256SUMS")
