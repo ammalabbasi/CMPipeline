@@ -10,7 +10,9 @@ files = ['corrected/ConQuR_tuned.tsv', 'batch_correction_quality.tsv',
          'batch_correction_methods.tsv', 'batch_correction_run_settings.tsv',
          'batch_correction_sample_status.tsv', 'batch_correction_taxon_status.tsv',
          'permanova_summary.tsv']
-files += [f'normalized/batch_corr_run_{source}_{method}.tsv'
+# Output directory name == the batch script's --prefix (<run>_<rank>), which names the normalized files.
+if a.name != b.name: raise SystemExit(f'FAIL: compare the same run/rank directories: {a.name} vs {b.name}')
+files += [f'normalized/{a.name}_{source}_{method}.tsv'
           for source in ['raw','ConQuR_tuned'] for method in ['clr_pseudo','clr_czm','rclr']]
 rows=[]
 for name in files:

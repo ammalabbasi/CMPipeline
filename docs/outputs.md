@@ -14,7 +14,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 | `HUMANN3` | gene families, pathway abundance and coverage, plus `merged/` |
 | `04_DECONTAMINATION`, `05_BATCH_CORRECTION`, `06_VALIDATION` | optional stages; see their sections |
 | `MULTIQC` | `multiqc_report.html` over fastp JSON and all five FastQC passes |
-| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 36 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 38 columns) and `cmp_cohort_report.html` |
 
 Each directory can be moved on its own with the matching parameter: `--unmapped_bam_dir`,
 `--fastqc_dir`, `--mapped_reads_dir`, `--krakenuniq_bracken_dir`, `--metaphlan4_dir`,
@@ -37,7 +37,10 @@ that commit" — because it is not.
 `cmp.qc.summary.tsv` is the one place that answers "what happened to this sample": reads in
 and out of filtering, retention at each depletion stage, whether it cleared
 `--consensus_min_reads`, how many genera and species each profiler called and how many they
-agreed on, and its decontamination role. `cleared_consensus_gate` reuses the exact
+agreed on, its decontamination role, and whether batch correction included it at each rank
+(`batch_species_status`, `batch_genus_status`: `included`, or `excluded: <reason>`). A run that
+starts at `--start_from decontam` or `batch_correction` still gets one row per analysed sample,
+from those stages; the upstream columns then read `NA`. `cleared_consensus_gate` reuses the exact
 definition `Bracken.nf` gates on, so the table can never disagree with the pipeline.
 
 **Read retention, and what it is relative to.** For FASTQ input, `reads_raw` is the whole
@@ -73,7 +76,7 @@ Every run produces, unless switched off:
 
 - **`RESULTS/MULTIQC/multiqc_report.html`** — fastp JSON plus all five FastQC passes
   (raw, filtered, post-GRCh38, post-T2T, post-pangenome). Disable with `--skip_multiqc true`.
-- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 36 columns (see *Outputs*).
+- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 38 columns (see *Outputs*).
 - **`RESULTS/QC_SUMMARY/cmp_cohort_report.html`** — a self-contained page (no network, no
   CDN) with the retention chart and the tables. Disable with `--skip_cohort_report true`.
 - **`pipeline_info/RUN_REPORT.txt`** and the provenance record — see *Outputs*.

@@ -135,11 +135,11 @@ def run_a(fx, run, expected):
     check("A: consensus genus table written", (res / "CONSENSUS_TAXA/bracken.metaphlan.common.genus.mpa.report.txt").exists())
 
     # ---- decontamination on the consensus table, wired with its library sizes
-    d = res / "04_DECONTAMINATION/consensus_run"
+    d = res / "04_DECONTAMINATION/species_run"
     for suffix in ("contaminants_final.tsv", "sample_validation.tsv", "decontam_pkg_decontaminated.csv",
-                   "batch_eligibility.tsv"):
-        check(f"A: decontam consensus_run.{suffix}", (d / f"consensus_run.{suffix}").exists())
-    elig = read_tsv(d / "consensus_run.batch_eligibility.tsv") if (d / "consensus_run.batch_eligibility.tsv").exists() else []
+                   "decontam_pkg_decontaminated.genus.csv", "batch_eligibility.tsv"):
+        check(f"A: decontam species_run.{suffix}", (d / f"species_run.{suffix}").exists())
+    elig = read_tsv(d / "species_run.batch_eligibility.tsv") if (d / "species_run.batch_eligibility.tsv").exists() else []
     check("A: decontam saw 2 eligible batches", sum(r.get("eligible") == "TRUE" for r in elig) == 2, f"{len(elig)} batches")
 
     # ---- QC summary: column contract and values

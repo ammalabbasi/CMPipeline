@@ -43,7 +43,7 @@ cd "$RUN/positive"
   --batch_corr_covariates sample_type --taxon_column clade_name --taxonomic_rank species \
   --outdir "$RUN/positive/results" --skip_cohort_report true > stdout_stderr.log 2>&1
 "$BATCH/bin/Rscript" "$REPO/tests/integration/assert_batch_output.R" "$REPO" "$RUN/fixtures" \
-  "$RUN/positive/results/05_BATCH_CORRECTION/batch_corr_run" > "$RUN/assertions.log" 2>&1
+  "$RUN/positive/results/05_BATCH_CORRECTION/batch_corr_run_species" > "$RUN/assertions.log" 2>&1
 mkdir "$RUN/negative12"
 cd "$RUN/negative12"
 set +e

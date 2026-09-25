@@ -46,7 +46,7 @@ and rejected outright if it is not a boolean.
   environment.
 
 **Reporting**
-- MultiQC report, a 36-column per-sample QC summary, and a self-contained cohort report.
+- MultiQC report, a 38-column per-sample QC summary, and a self-contained cohort report.
   `mapReads` now records read retention at each depletion stage, and `filterReads` keeps the
   fastp JSON it previously produced and discarded.
 

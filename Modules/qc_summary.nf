@@ -5,8 +5,9 @@ nextflow.enable.dsl=2
  *
  * Reads only artefacts the pipeline already produces -- fastp JSON, the per-stage
  * depletion counts from mapReads, the KrakenUniq report, the Bracken genus/species
- * reports, the MetaPhlAn profile, and decontamination's sample_validation.tsv. A stage
- * that did not run contributes nothing and its columns read NA.
+ * reports, the MetaPhlAn profile, decontamination's sample_validation.tsv and batch
+ * correction's per-rank sample ledger. A stage that did not run contributes nothing and
+ * its columns read NA.
  *
  * Inputs stage into numbered subdirectories: the same filename can arrive from more
  * than one upstream channel, and a flat staging would collide.

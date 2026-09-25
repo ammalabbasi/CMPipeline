@@ -257,6 +257,71 @@ class DecontamRoleTests(unittest.TestCase):
             self.assertEqual(row["decontam_final_status"], "retained")
 
 
+def write_sample_validation(directory, records):
+    lines = ["sample_id\tin_otu\tin_metadata\tsample_type\trole\tfinal_status\treason"]
+    lines += ["\t".join(r) for r in records]
+    (directory / "decontam_run.sample_validation.tsv").write_text("\n".join(lines) + "\n")
+
+
+def write_batch_ledger(directory, rank, records, sub="qc_1"):
+    folder = directory / sub
+    folder.mkdir(exist_ok=True)
+    lines = ["sample\tstatus\treason"] + ["\t".join(r) for r in records]
+    (folder / f"{rank}.batch_sample_status.tsv").write_text("\n".join(lines) + "\n")
+
+
+class DownstreamStartTests(unittest.TestCase):
+    """A run that starts at decontamination or batch correction still gets one row per sample."""
+
+    def test_decontam_start_rows_come_from_sample_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_sample_validation(Path(tmp), [
+                ("T1", "TRUE", "TRUE", "Primary Tumor", "positive", "included", "included_positive"),
+                ("B1", "TRUE", "TRUE", "Blood Derived Normal", "control", "included", "included_control"),
+                ("M1", "FALSE", "TRUE", "Primary Tumor", "NA", "excluded", "metadata_only"),
+            ])
+            rows = build_rows(tmp)
+            self.assertEqual(sorted(rows), ["B1", "T1"])   # metadata-only is not an analysed sample
+            self.assertEqual(rows["B1"]["decontam_role"], "control")
+            self.assertEqual(rows["T1"]["reads_raw"], "NA")
+
+    def test_metadata_only_row_still_joins_an_existing_sample(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_fastp(Path(tmp), "S1")
+            write_sample_validation(Path(tmp), [
+                ("S1", "FALSE", "TRUE", "Tumor", "NA", "excluded", "metadata_only")])
+            self.assertEqual(build_rows(tmp)["S1"]["decontam_final_status"], "excluded")
+
+    def test_batch_status_per_rank(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_batch_ledger(Path(tmp), "species", [
+                ("T1", "included", "eligible"),
+                ("B1", "excluded", "outside requested tumor subset"),
+                ("X9", "unused", "metadata row absent from count table")])
+            write_batch_ledger(Path(tmp), "genus", [
+                ("T1", "included", "eligible"),
+                ("B1", "excluded", "outside requested tumor subset")], sub="qc_2")
+            rows = build_rows(tmp)
+            self.assertEqual(sorted(rows), ["B1", "T1"])   # unused metadata row is not a sample
+            self.assertEqual(rows["T1"]["batch_species_status"], "included")
+            self.assertEqual(rows["T1"]["batch_genus_status"], "included")
+            self.assertEqual(rows["B1"]["batch_genus_status"],
+                             "excluded: outside requested tumor subset")
+
+    def test_single_rank_leaves_the_other_na(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_batch_ledger(Path(tmp), "genus", [("T1", "included", "eligible")])
+            row = build_rows(tmp)["T1"]
+            self.assertEqual(row["batch_genus_status"], "included")
+            self.assertEqual(row["batch_species_status"], "NA")
+
+    def test_unknown_rank_ledger_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_batch_ledger(Path(tmp), "phylum", [("T1", "included", "eligible")])
+            with self.assertRaises(ValueError):
+                build_rows(tmp)
+
+
 class OutputShapeTests(unittest.TestCase):
     def test_every_declared_column_is_written(self):
         with tempfile.TemporaryDirectory() as tmp:

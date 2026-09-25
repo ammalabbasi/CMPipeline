@@ -60,12 +60,12 @@ for LABEL in positiveA positiveB negative12; do
   else
     test "$code" -eq 0
     "$FRESH/bin/Rscript" --vanilla "$REPO/tests/integration/assert_batch_output.R" "$REPO" "$RUN/fixtures" \
-      "$RUN/$LABEL/results/05_BATCH_CORRECTION/batch_corr_run" >> "$RUN/assertions.log" 2>&1
+      "$RUN/$LABEL/results/05_BATCH_CORRECTION/batch_corr_run_species" >> "$RUN/assertions.log" 2>&1
   fi
 done
 python3 "$REPO/tests/integration/compare_batch_runs.py" \
-  "$RUN/positiveA/results/05_BATCH_CORRECTION/batch_corr_run" \
-  "$RUN/positiveB/results/05_BATCH_CORRECTION/batch_corr_run" \
+  "$RUN/positiveA/results/05_BATCH_CORRECTION/batch_corr_run_species" \
+  "$RUN/positiveB/results/05_BATCH_CORRECTION/batch_corr_run_species" \
   "$RUN/reproducibility_hashes.tsv" >> "$RUN/assertions.log" 2>&1
 printf 'PASS\n' > "$RUN/checkpoint6_status.txt"
 cat "$RUN/assertions.log"

@@ -167,6 +167,22 @@ class DegradationTests(unittest.TestCase):
                          decontam_final_status="NA")
         self.assertNotIn("Decontamination roles", render([row]))
 
+    def test_batch_section_absent_when_it_did_not_run(self):
+        self.assertNotIn("Batch correction cohort", render([sample_row()]))
+
+    def test_batch_section_shows_each_rank(self):
+        row = sample_row(batch_species_status="included",
+                         batch_genus_status="excluded: outside requested tumor subset")
+        html = render([row])
+        self.assertIn("Batch correction cohort", html)
+        self.assertIn("excluded: outside requested tumor subset", html)
+
+    def test_in_run_status_is_not_shown_as_final(self):
+        record = {"status": "started", "environment": {}, "run": {}, "code": {"dirty": False}}
+        html = render([sample_row()], record)
+        self.assertIn("running when this page was built", html)
+        self.assertIn("RUN_REPORT.txt", html)
+
 
 class EndToEndTests(unittest.TestCase):
     def test_writes_a_file_from_a_real_tsv(self):

@@ -34,12 +34,18 @@ consensus/Bracken when decontamination is off, or from an existing table with
 A failure writes `corrected/BATCH_CORRECTION_STATUS.tsv` (`failed`, the reason and sample counts)
 and stops the run, unless `--batch_corr_allow_uncorrected true`.
 
-**Outputs**, under `05_BATCH_CORRECTION/<run>/`: `corrected/ConQuR_tuned.tsv` and
+**Ranks.** Species-first runs (a full run, or `--start_from decontam` with a species table) correct
+the species table and the genus table summed from it, as two independent ConQuR runs with the same
+samples, covariates and seed. A supplied table (`--start_from batch_correction`, or a standalone
+genus decontamination) is corrected at its own `--taxonomic_rank`.
+
+**Outputs**, under `05_BATCH_CORRECTION/<run>_<rank>/` (e.g. `decontam_run_species/`, `decontam_run_genus/`): `corrected/ConQuR_tuned.tsv` and
 `ConQuR_tuned_parameters.txt` (the file keeps this name under `--batch_corr_method vanilla`
 too; its parameters file then reads `Phase used: vanilla`), `corrected/BATCH_CORRECTION_STATUS.tsv`,
 `normalized/` (the raw and corrected tables under several transforms), `pcoa_plots/`,
 `permanova_summary.tsv` (batch and covariate R² for every table and transform; check this to
-judge the correction) and `batch_correction_sample_status.tsv`.
+judge the correction), `batch_correction_sample_status.tsv`, `batch_correction_taxon_status.tsv`,
+`batch_correction_quality.tsv`, `batch_correction_methods.tsv` and `batch_correction_run_settings.tsv`.
 
 ---
 [Back to the README](../../README.md)

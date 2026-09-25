@@ -10,15 +10,18 @@ nextflow.enable.dsl=2
 
 process BatchCorrection {
 
-    tag "${prefix}"
+    tag "${prefix}_${rank}"
     label 'process_high'
 
     conda "${params.batch_corr_env}"
-    // Dynamic path: see the note in decontamination.nf.
-    publishDir path: { "${params.batch_corr_dir}/${prefix}" }, mode: 'copy', overwrite: true
+    // Dynamic path: see the note in decontamination.nf. One directory per rank, e.g.
+    // decontam_run_species/ and decontam_run_genus/. The QC-only ledger copy is not published.
+    publishDir path: { "${params.batch_corr_dir}/${prefix}_${rank}" }, mode: 'copy', overwrite: true,
+               saveAs: { name -> name.endsWith('.batch_sample_status.tsv') ? null : name }
 
     input:
-    tuple val(prefix), path(otu_table), path(metadata)
+    // rank: species | genus -- the level of THIS table.
+    tuple val(prefix), path(otu_table), path(metadata), val(rank)
 
     // Digests of the helper scripts / references this task uses (Provenance.code/.data). A val
     // input, so editing a script or swapping a reference invalidates -resume for exactly the
@@ -35,6 +38,7 @@ process BatchCorrection {
           path("batch_correction_quality.tsv"),
           path("batch_correction_methods.tsv"),
           path("batch_correction_run_settings.tsv"), emit: corrected
+    path("${rank}.batch_sample_status.tsv"), emit: qc_status
 
     script:
     // `--tumor_only false` arrives as the String "false" on Nextflow 25+, which is
@@ -57,7 +61,7 @@ process BatchCorrection {
     Rscript --vanilla "${params.batch_corr_script}" \\
         --otu "${otu_table}" \\
         --meta "${metadata}" \\
-        --prefix "${prefix}" \\
+        --prefix "${prefix}_${rank}" \\
         --batch_column "${params.batch_column}" \\
         --covariates "${params.batch_corr_covariates}" \\
         --type_column "${params.type_column}" \\
@@ -71,5 +75,8 @@ process BatchCorrection {
         --method ${method_flag} \\
         --seed ${params.batch_corr_seed} \\
         --threads ${task.cpus}
+
+    # Rank-named copy of the sample ledger for the cohort QC summary.
+    cp batch_correction_sample_status.tsv "${rank}.batch_sample_status.tsv"
     """
 }

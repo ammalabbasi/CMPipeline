@@ -19,7 +19,7 @@ stopifnot(sum(ledger$status == "included") == 24L, sum(ledger$status == "exclude
 for (source in c("raw", "ConQuR_tuned")) {
   counts <- if (source == "raw") raw else corrected
   for (method in c("clr_pseudo", "clr_czm", "rclr")) {
-    file <- file.path(output, "normalized", paste0("batch_corr_run_", source, "_", method, ".tsv"))
+    file <- file.path(output, "normalized", paste0(basename(normalizePath(output)), "_", source, "_", method, ".tsv"))
     normalized <- read_matrix(file)
     assert_same_matrix_ids(normalized, raw)
     if (method == "clr_pseudo") {

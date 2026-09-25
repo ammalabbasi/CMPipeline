@@ -200,6 +200,9 @@ def provenance_banner(record):
                 'This report cannot say which code produced these numbers.</div>')
     code = record.get("code", {})
     status = record.get("status", "?")
+    # The page is built inside the run, before the completion handler writes the outcome.
+    if status == "started":
+        status = "running when this page was built (outcome: RUN_REPORT.txt)"
     bits = [
         f'<span><strong>Status</strong> {html.escape(status)}</span>',
         f'<span><strong>Commit</strong> <code>{html.escape(str(code.get("commit", "—"))[:12])}</code></span>',
@@ -399,6 +402,17 @@ def render(rows, record, qc_path, validation_report=None, consensus_status=None)
         empty_when="decontam_role",
     )
 
+    batch_columns = ("batch_species_status", "batch_genus_status")
+    batch = "" if all(r.get(c) in NA for r in rows for c in batch_columns) else table(
+        rows,
+        [("sample", "Sample", html.escape),
+         ("batch_species_status", "Species", lambda v: html.escape(str(v or "—"))),
+         ("batch_genus_status", "Genus", lambda v: html.escape(str(v or "—")))],
+        "Batch correction cohort",
+        "Whether each sample entered batch correction at each rank, and why not. "
+        "Empty unless batch correction ran.",
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -414,6 +428,7 @@ def render(rows, record, qc_path, validation_report=None, consensus_status=None)
 {classification}
 {consensus_banner(consensus_status)}
 {decontam}
+{batch}
 {validation_section(validation_report)}
 <footer>
   Every number here comes from <code>{html.escape(str(qc_path.name))}</code>; this page

@@ -289,7 +289,9 @@ COHORT_TABLES = {
     "humann3_dir": ["merged/*.tsv"],
     "decontam_dir": ["*/*.csv", "*/*.tsv", "*/*.txt"],
     "batch_corr_dir": ["*/corrected/*", "*/normalized/*.tsv", "*/permanova_summary.tsv",
-                       "*/batch_correction_sample_status.tsv"],
+                       "*/batch_correction_sample_status.tsv", "*/batch_correction_taxon_status.tsv",
+                       "*/batch_correction_quality.tsv", "*/batch_correction_methods.tsv",
+                       "*/batch_correction_run_settings.tsv"],
     "validation_dir": ["*.tsv"],
     "qc_summary_dir": ["cmp.qc.summary.tsv", "cmp_cohort_report.html"],
 }

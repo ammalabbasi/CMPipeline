@@ -115,7 +115,7 @@ The main options. [`docs/parameters.md`](docs/parameters.md) lists all of them.
 | `--consensus_min_reads` | `100000` | No | classified reads a sample needs for MetaPhlAn (and HUMAnN) |
 | `--run_decontam` | `true` | No | decontamination; needs `--metadata_file` + role parameters |
 | `--metadata_file` | TSV/CSV path | With decontam or batch correction | per-sample metadata |
-| `--taxonomic_rank` | `genus`, `species` | With decontam or batch correction | the table to decontaminate/correct |
+| `--taxonomic_rank` | `genus`, `species` | With decontam or batch correction | the rank of a supplied table (`--start_from decontam` / `batch_correction`); species-first runs decontaminate species and correct both species and genus |
 | `--cohort_preset` | `tcga` | No | the TCGA sample-role contract in one flag |
 | `--control_role`, `--positive_values`, `--control_values` | see guide | With decontam (unless `--cohort_preset`) | which samples are material and which are controls |
 | `--run_alignment_validation` | `false` | No | alignment validation of species calls |
@@ -173,7 +173,7 @@ Under `--outdir`; each folder can be moved with its own parameter.
 | `04_DECONTAMINATION/` | the decontaminated table, contaminant calls, per-sample roles |
 | `05_BATCH_CORRECTION/` | corrected tables, PERMANOVA summary, correction status |
 | `HUMANN3/` | gene families and pathways |
-| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 36 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 38 columns) and `cmp_cohort_report.html` |
 
 Run records (`trace.txt`, `report.html`, `RUN_REPORT.txt`, `provenance/`) go to `pipeline_info/` in the
 launch directory. Details: [Outputs](docs/outputs.md).

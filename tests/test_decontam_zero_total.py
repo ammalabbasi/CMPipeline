@@ -28,7 +28,8 @@ class ZeroTotalWiring(unittest.TestCase):
         self.assertIn("--output_library_sizes bracken_library_sizes.tsv", module)
         self.assertIn("output_library_sizes", (ROOT / "scripts" / "compute_consensus_taxa.py").read_text())
         text = (ROOT / "main.nf").read_text()
-        self.assertIn("consensus_taxa.out[4].set { CONSENSUS_LIBRARY_SIZES }", text)
+        # Decontamination takes library sizes from the prepared Bracken tables.
+        self.assertIn("BRACKEN_FILES.map { genus, species, library -> library }.set { DECONTAM_LIBRARY }", text)
         self.assertIn(".combine(DECONTAM_LIBRARY)", text)
         decon = (ROOT / "Modules" / "decontamination.nf").read_text()
         self.assertIn("path(library_sizes, stageAs:", decon)

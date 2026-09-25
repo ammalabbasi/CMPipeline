@@ -296,27 +296,13 @@ def requirePathParam(String name, value, String why) {
 
 def metadataColumns(String header) {
     def delimiter = header.contains('\t') ? '\t' : ','
-    def columns = []
-    def field = new StringBuilder()
-    def quoted = false
-    for (int i = 0; i < header.length(); i++) {
-        def c = header.substring(i, i + 1)
-        if (c == '"') {
-            if (quoted && i + 1 < header.length() && header.substring(i + 1, i + 2) == '"') {
-                field.append('"')
-                i++
-            } else {
-                quoted = !quoted
-            }
-        } else if (c == delimiter && !quoted) {
-            columns << field.toString()
-            field.setLength(0)
-        } else {
-            field.append(c)
-        }
+    // No loops: the Nextflow 26 strict parser rejects both C-style `for` and `while`. Split on
+    // delimiters outside quotes (an even number of quotes follows), then unquote ("" -> ").
+    if (header.count('"') % 2 != 0) error "Unclosed quote in metadata header"
+    def columns = header.split(delimiter + '(?=(?:[^"]*"[^"]*")*[^"]*$)', -1).collect { f ->
+        def m = f =~ /^"(.*)"$/
+        m.matches() ? m.group(1).replace('""', '"') : f.replace('"', '')
     }
-    if (quoted) error "Unclosed quote in metadata header"
-    columns << field.toString()
     if (columns.any { !it } || columns.unique(false).size() != columns.size())
         error "Blank or duplicate metadata header"
     return columns
@@ -1005,16 +991,12 @@ workflow {
 
             // consensus_taxa emits three outputs (pdf, common genus, common species).
             // `.set` on the multi-channel object made every downstream `.map` fail with
-            // "Multi-channel output cannot be applied to operator map". Select the one
-            // table the requested rank needs, and take it from the channel rather than
-            // re-reading it out of publishDir (which raced with the publish).
+            // "Multi-channel output cannot be applied to operator map". Take each rank's
+            // table from the channel rather than re-reading it out of publishDir (which
+            // raced with the publish).
             consensus_taxa(consensus_input, depsOf(["${params.scripts}/compute_consensus_taxa.py", "${params.scripts}/count_tables.py"]))
-            if (params.taxonomic_rank == 'species') {
-                consensus_taxa.out[2].set { CONSENSUS_OUTPUT }
-            } else {
-                consensus_taxa.out[1].set { CONSENSUS_OUTPUT }
-            }
-            consensus_taxa.out[4].set { CONSENSUS_LIBRARY_SIZES }
+            consensus_taxa.out[2].set { CONSENSUS_SPECIES }
+            consensus_taxa.out[1].set { CONSENSUS_GENUS }
             consensus_taxa.out[3].set { CONSENSUS_STATUS }
         } else {
             log.info "Skipping consensus taxa step"
@@ -1095,14 +1077,17 @@ workflow {
         if (params.start_from == 'beginning' || params.taxonomic_rank == 'species') {
             aggregateDecontaminatedSpecies(Decontamination.out.for_batch_correction,
                 depsOf(["${params.scripts}/aggregate_decontaminated_species.py", "${params.scripts}/count_tables.py"]))
-            if (params.taxonomic_rank == 'genus') {
-                aggregateDecontaminatedSpecies.out.genus.set { ch_for_batch_corr }
-            } else {
-                Decontamination.out.for_batch_correction.set { ch_for_batch_corr }
-            }
+            // Both ranks go on to batch correction: the species table and the genus table summed from it.
+            Decontamination.out.for_batch_correction
+                .map { prefix, table, metadata -> tuple(prefix, table, metadata, 'species') }
+                .mix(aggregateDecontaminatedSpecies.out.genus
+                     .map { prefix, table, metadata -> tuple(prefix, table, metadata, 'genus') })
+                .set { ch_for_batch_corr }
         } else {
             // Preserve explicitly requested standalone genus analysis; it is not the species-first full route.
-            Decontamination.out.for_batch_correction.set { ch_for_batch_corr }
+            Decontamination.out.for_batch_correction
+                .map { prefix, table, metadata -> tuple(prefix, table, metadata, 'genus') }
+                .set { ch_for_batch_corr }
         }
     }
 
@@ -1118,10 +1103,12 @@ workflow {
                       "  --decontam_otu_table <path>\n" +
                       "  --metadata_file <path>"
             }
+            // One supplied table: --taxonomic_rank names its rank.
             Channel.of(tuple(
                 'batch_corr_run',
                 file(params.decontam_otu_table),
-                file(params.metadata_file)
+                file(params.metadata_file),
+                params.taxonomic_rank
             )).set { ch_batch_input }
         } else if (runDecontam) {
             // Use output from decontamination
@@ -1133,9 +1120,9 @@ workflow {
                 error "ERROR: When using --run_batch_correction without decontam, you must provide:\n" +
                       "  --metadata_file <path>"
             }
-            (params.taxonomic_rank == 'species' ? VALIDATED_SPECIES : VALIDATED_GENUS)
-                .map { t -> tuple("validated_${params.taxonomic_rank}".toString(), t,
-                                  file(params.metadata_file, checkIfExists: true)) }
+            def validatedMeta = file(params.metadata_file, checkIfExists: true)
+            VALIDATED_SPECIES.map { t -> tuple('validated', t, validatedMeta, 'species') }
+                .mix(VALIDATED_GENUS.map { t -> tuple('validated', t, validatedMeta, 'genus') })
                 .set { ch_batch_input }
         } else if (params.start_from == 'beginning' && !skipConsensus) {
             // No decontam, use consensus output directly
@@ -1143,22 +1130,21 @@ workflow {
                 error "ERROR: When using --run_batch_correction without decontam, you must provide:\n" +
                       "  --metadata_file <path>"
             }
-            CONSENSUS_OUTPUT
-                .map { consensus_file ->
-                    tuple('consensus_run', consensus_file,
-                          file(params.metadata_file, checkIfExists: true))
-                }
+            def consensusMeta = file(params.metadata_file, checkIfExists: true)
+            CONSENSUS_SPECIES.map { t -> tuple('consensus_run', t, consensusMeta, 'species') }
+                .mix(CONSENSUS_GENUS.map { t -> tuple('consensus_run', t, consensusMeta, 'genus') })
                 .set { ch_batch_input }
         } else if (params.start_from == 'beginning' && skipConsensus && !skipClassification) {
             if (!params.metadata_file) {
                 error "ERROR: When using --run_batch_correction with --skip_consensus, you must provide:\n" +
                       "  --metadata_file <path>"
             }
-            log.info "Skipping consensus taxa - using Bracken ${params.taxonomic_rank ?: 'genus'} output directly for batch correction"
+            log.info "Skipping consensus taxa - using Bracken species and genus output directly for batch correction"
+            def brackenMeta = file(params.metadata_file, checkIfExists: true)
             BRACKEN_FILES
-                .map { bracken_genus_file, bracken_species_file, library_sizes ->
-                    def selected = params.taxonomic_rank == 'species' ? bracken_species_file : bracken_genus_file
-                    tuple('bracken_run', selected, file(params.metadata_file, checkIfExists: true))
+                .flatMap { bracken_genus_file, bracken_species_file, library_sizes ->
+                    [tuple('bracken_run', bracken_species_file, brackenMeta, 'species'),
+                     tuple('bracken_run', bracken_genus_file, brackenMeta, 'genus')]
                 }
                 .set { ch_batch_input }
         } else {
@@ -1168,6 +1154,7 @@ workflow {
         }
 
         BatchCorrection(ch_batch_input, depsOf([params.batch_corr_script, "${params.scripts}/batch_contract.R", "${params.scripts}/batch_reporting.R", "${params.scripts}/install_conqur.R"]))
+        qcParts << BatchCorrection.out.qc_status   // <rank>.batch_sample_status.tsv, per corrected rank
     }
 
     // ============================================================================

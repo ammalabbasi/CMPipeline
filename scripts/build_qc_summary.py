@@ -8,9 +8,11 @@ Answers the questions a run leaves open:
     sample no MetaPhlAn profile?" has an answer)
   - how many genera and species each profiler called, and how many they agree on
   - what role decontamination gave the sample
+  - whether batch correction included it, per corrected rank
 
 Inputs are globbed from a directory of staged files, so a stage that did not run simply
-contributes nothing and its columns read NA. Standard library only.
+contributes nothing and its columns read NA. A run that starts at decontamination or batch
+correction gets its rows from those stages. Standard library only.
 
 Counts and rates only -- no sequence, and no clinical value, is read or written.
 """
@@ -48,6 +50,8 @@ COLUMNS = [
     "shared_genera", "shared_species",
     # decontamination
     "decontam_sample_type", "decontam_role", "decontam_final_status",
+    # batch correction, per corrected rank: included, or excluded: <reason>
+    "batch_species_status", "batch_genus_status",
     # what happened to the sample, in one word (audit C13/C02/C10): no_outputs (in the sample sheet
     # but nothing reached QC: a failed or --sample_failure_strategy ignore'd task),
     # dropped_zero_after_fastp, no_reads_after_depletion, below_bracken_threshold (Bracken wrote a
@@ -199,8 +203,29 @@ def parse_sample_validation(path: Path) -> dict[str, dict]:
                     "decontam_sample_type": record.get("sample_type") or NA,
                     "decontam_role": record.get("role") or NA,
                     "decontam_final_status": record.get("final_status") or NA,
+                    # FALSE for a metadata-only row: the sample is not in the analysed table.
+                    "_in_table": (record.get("in_otu") or "TRUE").strip().upper() == "TRUE",
                 }
     return roles
+
+
+def parse_batch_sample_status(path: Path) -> dict[str, str]:
+    """<rank>.batch_sample_status.tsv -> {sample: 'included' | 'excluded: <reason>'}.
+
+    `unused` rows (metadata without a count-table column) are not samples of the analysis.
+    """
+    statuses = {}
+    with path.open() as handle:
+        for record in csv.DictReader(handle, delimiter="\t"):
+            sample = (record.get("sample") or "").strip()
+            status = (record.get("status") or "").strip()
+            if not sample or status == "unused":
+                continue
+            if status == "included":
+                statuses[sample] = "included"
+            else:
+                statuses[sample] = f"{status}: {(record.get('reason') or '').strip()}"
+    return statuses
 
 
 def sample_status(row: dict) -> str:
@@ -279,10 +304,20 @@ def build(inputs: Path, min_reads: int) -> list[dict]:
         if sample in bracken_species:
             row["shared_species"] = len(species & bracken_species[sample])
 
+    # Decontamination and batch correction also CREATE rows, so a run that starts at either
+    # stage still gets one row per analysed sample. A metadata-only decontam row does not.
     for path in sorted(inputs.rglob("*sample_validation.tsv")):
         for sample, roles in parse_sample_validation(path).items():
-            if sample in rows:
-                rows[sample].update(roles)
+            in_table = roles.pop("_in_table")
+            if sample in rows or in_table:
+                row_for(sample).update(roles)
+
+    for path in sorted(inputs.rglob("*.batch_sample_status.tsv")):
+        rank = path.name[: -len(".batch_sample_status.tsv")]
+        if rank not in ("species", "genus"):
+            raise ValueError(f"Unexpected batch ledger rank in {path.name}")
+        for sample, status in parse_batch_sample_status(path).items():
+            row_for(sample)[f"batch_{rank}_status"] = status
 
     # Samples the sheet asked for that produced nothing at all (audit C10).
     for path in sorted(inputs.rglob("expected_samples.txt")):

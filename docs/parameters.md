@@ -44,7 +44,7 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--batch_corr_allow_uncorrected` | `false` | a failed correction stops the run. `true` continues with the raw counts, published as `corrected/UNCORRECTED_passthrough.tsv`, never under a corrected name |
 | `--conqur_sha` | `ff233085…` | the ConQuR commit the script was written against; any other install is refused |
 | `--taxon_column` | `clade_name` | taxonomy column in the OTU table; every other column is a sample |
-| `--taxonomic_rank` | `null` | **required when decontamination or batch correction runs**: `genus` or `species`, the table to decontaminate/correct |
+| `--taxonomic_rank` | `null` | **required when decontamination or batch correction runs**: `genus` or `species`. It names the rank of a table you supply (`--consensus_otu_table`, `--decontam_otu_table`). A full run, or `--start_from decontam` with a species table, decontaminates species, sums the surviving species to genus, and batch-corrects **both** ranks |
 | `--sample_id_column` | `sampleid` | metadata column holding the sample IDs |
 | `--unselected_type_policy` | `error` | `error` (default) stops on a sample whose type is in neither role list; `exclude` drops it |
 | `--cohort_preset` | `null` | `tcga` sets the TCGA role contract (type column `Sample Type_x`, positives Primary Tumor + Solid Tissue Normal, controls Blood Derived Normal) |
@@ -135,7 +135,8 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--humann3_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
 | `--decontam_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
 | `--validation_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
-| `--batch_corr_env` | pre-built TSCC env | see *Conda/Mamba* |
+| `--batch_corr_env` | none (the `tscc` profile sets a site prefix) | prefix built by `scripts/setup_batch_env.sh`; required when batch correction runs |
+| `--batch_corr_seed` | `1` | RNG seed for batch correction; hold allocated CPUs and environment fixed for repeat comparisons |
 | `--antismash_env` | `conda_envs/antismash_env.yml`, `ANTISMASH/` | reserved for the antiSMASH module in `Modules/antismash.nf`, which `main.nf` does not currently call |
 | `--batch_corr_method` | `tune` | `tune` (auto-phased Tune_ConQuR) or `vanilla` (default ConQuR settings). Nothing else is accepted: ComBat is not implemented |
 

@@ -42,9 +42,10 @@ species table and on its genus roll-up.
      best genome only: breadth, bins, `reads_on_best`. `minimap2_count` equals `unique_reads`.
    - E. coli + Shigella are scored as one taxon (`ref/validation_groups.tsv`).
 5. **Mask.** Bracken counts stay the quantity. A count is set to 0 **only where the taxon failed or was
-   unsupported** in that sample. The masked species table and its genus roll-up both go to decontamination, and
-   `decontam_species_vs_genus.tsv` compares the two sets of calls. Batch correction continues from
-   `--taxonomic_rank`.
+   unsupported** in that sample. The masked species table goes to decontamination; genus counts are then
+   summed from the surviving species, without a second genus test, and batch correction runs on both ranks.
+   (The earlier separate genus decontamination and its `decontam_species_vs_genus.tsv` comparison are not
+   run in this version.)
 
 The thresholds come from a simulation benchmark on public genomes (21 CRC-relevant species; reliable from
 about 100 read pairs per taxon, zero false calls). **Identity 0.98 is the least certain for real reads**

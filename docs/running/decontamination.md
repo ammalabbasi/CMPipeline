@@ -13,7 +13,7 @@ choice, not something the pipeline should guess:
 
 | Parameter | Meaning |
 |---|---|
-| `--taxonomic_rank` | `genus` or `species` — which consensus/Bracken table to decontaminate |
+| `--taxonomic_rank` | `genus` or `species`. A full run always decontaminates **species** and sums the surviving species to genus (no second genus test); with `--start_from decontam` it is the rank of `--consensus_otu_table` |
 | `--control_role` | `experimental_blank` (true blanks) or `surrogate_biological` (a sample class standing in for blanks) |
 | `--positive_values` | the sample types that are real material, i.e. **not** controls |
 | `--control_values` | the sample types used as negative controls |
