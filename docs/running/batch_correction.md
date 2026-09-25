@@ -24,8 +24,9 @@ consensus/Bracken when decontamination is off, or from an existing table with
 
 - **At least one covariate that varies within every batch.** `--batch_corr_covariates none`
   fails loudly, by design: ConQuR builds its model from covariates plus batch and cannot run on
-  batch alone. A covariate that is constant within any one batch is dropped with a warning; if
-  that leaves none, the tuned method fails.
+  batch alone. A requested covariate that is constant within any one eligible batch also stops the
+  run, naming the covariate and batch: the model is never changed silently, so change
+  `--batch_corr_covariates` explicitly if that covariate cannot be used.
 - **At least 20 samples** for the tuned method, after these removals, each logged: samples that
   are all-zero after decontamination (listed in `batch_correction_sample_status.tsv`), samples
   with an unknown or missing batch, samples missing any covariate value, and batches with fewer

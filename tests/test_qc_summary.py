@@ -248,8 +248,8 @@ class DecontamRoleTests(unittest.TestCase):
             d = Path(tmp)
             write_fastp(d, "S1")
             (d / "run.sample_validation.tsv").write_text(
-                "sample_id\tsample_type\trole\tfinal_status\n"
-                "S1\tTumor\tpositive\tretained\n"
+                "sample_id\tin_otu\tsample_type\trole\tfinal_status\n"
+                "S1\tTRUE\tTumor\tpositive\tretained\n"
             )
             row = build_rows(tmp)["S1"]
             self.assertEqual(row["decontam_role"], "positive")
@@ -320,6 +320,86 @@ class DownstreamStartTests(unittest.TestCase):
             write_batch_ledger(Path(tmp), "phylum", [("T1", "included", "eligible")])
             with self.assertRaises(ValueError):
                 build_rows(tmp)
+
+
+class StageConsistencyTests(unittest.TestCase):
+    """Strict inputs, and a batch cohort that must be explained by decontamination's output."""
+
+    DECONTAM = [
+        ("T1", "TRUE", "TRUE", "Primary Tumor", "positive", "included", "included_positive"),
+        ("T2", "TRUE", "TRUE", "Primary Tumor", "positive", "included", "included_positive"),
+        ("B1", "TRUE", "TRUE", "Blood Derived Normal", "control", "included", "included_control"),
+        ("M1", "FALSE", "TRUE", "Primary Tumor", "NA", "excluded", "metadata_only"),
+    ]
+    BATCH = [("T1", "included", "eligible"), ("T2", "excluded", "all-zero after decontamination"),
+             ("B1", "excluded", "outside requested tumor subset")]
+
+    def build(self, decontam=DECONTAM, species=BATCH, genus=BATCH, header=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = Path(tmp.name)
+        if decontam is not None:
+            write_sample_validation(d, decontam)
+            if header is not None:
+                path = d / "decontam_run.sample_validation.tsv"
+                lines = path.read_text().splitlines()
+                path.write_text("\n".join([header] + lines[1:]) + "\n")
+        if species is not None:
+            write_batch_ledger(d, "species", species)
+        if genus is not None:
+            write_batch_ledger(d, "genus", genus, sub="qc_2")
+        return build_rows(d)
+
+    def test_explained_exclusions_pass(self):
+        rows = self.build()
+        self.assertEqual(sorted(rows), ["B1", "T1", "T2"])
+        self.assertEqual(rows["T2"]["batch_species_status"], "excluded: all-zero after decontamination")
+
+    def test_genus_only_all_zero_exclusion_passes(self):
+        genus = [("T1", "excluded", "all-zero after decontamination")] + self.BATCH[1:]
+        self.assertEqual(self.build(genus=genus)["T1"]["batch_genus_status"],
+                         "excluded: all-zero after decontamination")
+
+    def test_missing_in_otu_column_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "in_otu"):
+            self.build(header="sample_id\tin_metadata\tsample_type\trole\tfinal_status\treason")
+
+    def test_invalid_in_otu_value_is_an_error(self):
+        for value in ("", "yes", "true", "NA"):
+            with self.subTest(value=value):
+                bad = [("T1", value) + self.DECONTAM[0][2:]] + self.DECONTAM[1:]
+                with self.assertRaisesRegex(ValueError, "in_otu must be TRUE or FALSE"):
+                    self.build(decontam=bad)
+
+    def test_batch_sample_not_from_decontamination_is_an_error(self):
+        extra = self.BATCH + [("X1", "included", "eligible")]
+        with self.assertRaisesRegex(ValueError, "not from decontamination \\['X1'\\]"):
+            self.build(species=extra, genus=extra)
+
+    def test_decontaminated_sample_missing_from_batch_is_an_error(self):
+        short = self.BATCH[:2]
+        with self.assertRaisesRegex(ValueError, "missing from batch ledger \\['B1'\\]"):
+            self.build(species=short, genus=short)
+
+    def test_metadata_only_sample_in_batch_is_an_error(self):
+        leaked = self.BATCH + [("M1", "excluded", "missing covariate: age_diag")]
+        with self.assertRaisesRegex(ValueError, "not from decontamination \\['M1'\\]"):
+            self.build(species=leaked, genus=leaked)
+
+    def test_ranks_with_different_samples_are_an_error(self):
+        with self.assertRaisesRegex(ValueError, "different samples per rank"):
+            self.build(decontam=None, genus=self.BATCH[:2])
+
+    def test_invalid_batch_ledger_rows_are_errors(self):
+        for rows in ([("T1", "maybe", "eligible")], [("T1", "excluded", "")],
+                     [("T1", "included", "eligible"), ("T1", "included", "eligible")]):
+            with self.subTest(rows=rows):
+                with self.assertRaises(ValueError):
+                    self.build(decontam=None, species=rows, genus=None)
+
+    def test_duplicate_decontam_sample_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "duplicate sample T1"):
+            self.build(decontam=self.DECONTAM + [self.DECONTAM[0]])
 
 
 class OutputShapeTests(unittest.TestCase):

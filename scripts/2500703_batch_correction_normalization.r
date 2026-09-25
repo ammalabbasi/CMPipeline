@@ -701,7 +701,8 @@ plot_dir <- file.path(dirname(args$prefix), "pcoa_plots"); dir.create(plot_dir, 
 covariate_vector <- trimws(unlist(strsplit(args$covariates, ",")))
 # "none" (or empty) stops the run: ConQuR needs >= 1 covariate (audit A02). A named covariate
 # missing from the metadata also stops the run below. A covariate that is constant within any
-# batch is dropped before ConQuR runs, with a WARN in tune mode (see run_auto_phase).
+# batch also stops the run (prepare_batch_cohort in batch_contract.R): the requested model is
+# never changed silently.
 if (length(covariate_vector) == 0 || identical(tolower(covariate_vector), "none")) {
   # ConQuR builds its model from covariates + batch and cannot run on batch alone (audit A02).
   # Decided 2026-09-23 (Ammal): fail loudly rather than guess or pass raw counts off as corrected.

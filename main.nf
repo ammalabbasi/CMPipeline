@@ -297,11 +297,11 @@ def requirePathParam(String name, value, String why) {
 def metadataColumns(String header) {
     def delimiter = header.contains('\t') ? '\t' : ','
     // No loops: the Nextflow 26 strict parser rejects both C-style `for` and `while`. Split on
-    // delimiters outside quotes (an even number of quotes follows), then unquote ("" -> ").
+    // delimiters outside quotes (an even number of quotes follows). Then, in each field, every
+    // quoted section loses its quotes and turns "" into ", exactly as a quote-toggling scan would.
     if (header.count('"') % 2 != 0) error "Unclosed quote in metadata header"
     def columns = header.split(delimiter + '(?=(?:[^"]*"[^"]*")*[^"]*$)', -1).collect { f ->
-        def m = f =~ /^"(.*)"$/
-        m.matches() ? m.group(1).replace('""', '"') : f.replace('"', '')
+        f.replaceAll(/"((?:[^"]|"")*)"/) { all, inner -> inner.replace('""', '"') }
     }
     if (columns.any { !it } || columns.unique(false).size() != columns.size())
         error "Blank or duplicate metadata header"

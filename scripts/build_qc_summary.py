@@ -196,16 +196,25 @@ def parse_metaphlan_taxa(path: Path) -> tuple[set[str], set[str]]:
 def parse_sample_validation(path: Path) -> dict[str, dict]:
     roles = {}
     with path.open() as handle:
-        for record in csv.DictReader(handle, delimiter="\t"):
+        reader = csv.DictReader(handle, delimiter="\t")
+        if "in_otu" not in (reader.fieldnames or []) or "final_status" not in (reader.fieldnames or []):
+            raise ValueError(f"{path.name}: sample_validation needs in_otu and final_status columns")
+        for record in reader:
             sample = (record.get("sample_id") or "").strip()
-            if sample:
-                roles[sample] = {
-                    "decontam_sample_type": record.get("sample_type") or NA,
-                    "decontam_role": record.get("role") or NA,
-                    "decontam_final_status": record.get("final_status") or NA,
-                    # FALSE for a metadata-only row: the sample is not in the analysed table.
-                    "_in_table": (record.get("in_otu") or "TRUE").strip().upper() == "TRUE",
-                }
+            if not sample:
+                raise ValueError(f"{path.name}: row without a sample_id")
+            in_otu = record["in_otu"]
+            if in_otu not in ("TRUE", "FALSE"):
+                raise ValueError(f"{path.name}: in_otu must be TRUE or FALSE for {sample}, got {in_otu!r}")
+            if sample in roles:
+                raise ValueError(f"{path.name}: duplicate sample {sample}")
+            roles[sample] = {
+                "decontam_sample_type": record.get("sample_type") or NA,
+                "decontam_role": record.get("role") or NA,
+                "decontam_final_status": record.get("final_status") or NA,
+                # FALSE for a metadata-only row: the sample is not in the analysed table.
+                "_in_table": in_otu == "TRUE",
+            }
     return roles
 
 
@@ -219,12 +228,15 @@ def parse_batch_sample_status(path: Path) -> dict[str, str]:
         for record in csv.DictReader(handle, delimiter="\t"):
             sample = (record.get("sample") or "").strip()
             status = (record.get("status") or "").strip()
-            if not sample or status == "unused":
-                continue
-            if status == "included":
-                statuses[sample] = "included"
-            else:
-                statuses[sample] = f"{status}: {(record.get('reason') or '').strip()}"
+            reason = (record.get("reason") or "").strip()
+            if not sample or status not in ("included", "excluded", "unused"):
+                raise ValueError(f"{path.name}: invalid batch ledger row {sample!r} / {status!r}")
+            if status == "excluded" and not reason:
+                raise ValueError(f"{path.name}: excluded sample {sample} has no reason")
+            if sample in statuses:
+                raise ValueError(f"{path.name}: duplicate sample {sample}")
+            if status != "unused":
+                statuses[sample] = "included" if status == "included" else f"excluded: {reason}"
     return statuses
 
 
@@ -306,17 +318,38 @@ def build(inputs: Path, min_reads: int) -> list[dict]:
 
     # Decontamination and batch correction also CREATE rows, so a run that starts at either
     # stage still gets one row per analysed sample. A metadata-only decontam row does not.
+    decontam_output = None   # samples decontamination passed on (final_status included)
     for path in sorted(inputs.rglob("*sample_validation.tsv")):
+        if decontam_output is not None:
+            raise ValueError("More than one decontamination sample_validation.tsv reached the QC summary")
+        decontam_output = set()
         for sample, roles in parse_sample_validation(path).items():
             in_table = roles.pop("_in_table")
+            if roles["decontam_final_status"] == "included":
+                decontam_output.add(sample)
             if sample in rows or in_table:
                 row_for(sample).update(roles)
 
+    ledgers = {}
     for path in sorted(inputs.rglob("*.batch_sample_status.tsv")):
         rank = path.name[: -len(".batch_sample_status.tsv")]
-        if rank not in ("species", "genus"):
-            raise ValueError(f"Unexpected batch ledger rank in {path.name}")
-        for sample, status in parse_batch_sample_status(path).items():
+        if rank not in ("species", "genus") or rank in ledgers:
+            raise ValueError(f"Unexpected or repeated batch ledger rank in {path.name}")
+        ledgers[rank] = parse_batch_sample_status(path)
+    # Every rank is corrected from the same samples, and after decontamination from exactly the
+    # samples it passed on. Excluded samples are fine when the ledger gives the reason (e.g. outside
+    # the tumor subset, all-zero); a sample that appears or vanishes between stages is not.
+    sample_sets = {rank: set(ledger) for rank, ledger in ledgers.items()}
+    if len({frozenset(s) for s in sample_sets.values()}) > 1:
+        raise ValueError(f"Batch ledgers cover different samples per rank: {sorted(set.symmetric_difference(*sample_sets.values()))[:5]}")
+    for rank, samples in sample_sets.items():
+        if decontam_output is not None and samples != decontam_output:
+            raise ValueError(
+                f"{rank} batch ledger does not match decontamination output: "
+                f"not from decontamination {sorted(samples - decontam_output)[:5]}, "
+                f"missing from batch ledger {sorted(decontam_output - samples)[:5]}")
+    for rank, ledger in ledgers.items():
+        for sample, status in ledger.items():
             row_for(sample)[f"batch_{rank}_status"] = status
 
     # Samples the sheet asked for that produced nothing at all (audit C10).
