@@ -92,10 +92,13 @@ process aggregateDecontaminatedSpecies {
     val deps
     output:
     tuple val(prefix), path("${prefix}.decontam_pkg_decontaminated.genus.csv"), path(metadata), emit: genus
+    // Species without a genus parent: kept in the species table, listed here, not summed.
+    path("${prefix}.genus_rollup_excluded.tsv"), emit: excluded
     script:
     """
     python "${params.scripts}/aggregate_decontaminated_species.py" \\
         --input "${species_table}" --output "${prefix}.decontam_pkg_decontaminated.genus.csv" \\
+        --excluded "${prefix}.genus_rollup_excluded.tsv" \\
         --taxon_column "${params.taxon_column}"
     """
 }

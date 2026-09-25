@@ -107,6 +107,10 @@ in `n_evaluable_batches` and `callable`; read "not a contaminant" as "could not 
 `sample_validation.tsv` (every sample's role and whether it was used or excluded, and why),
 `validated_metadata.tsv`, `batch_eligibility.tsv`, `run_manifest.tsv` (every setting and input
 checksum), `decontamination_summary.txt` and `decontamination_plots/`.
+A species-first run also writes `decontam_pkg_decontaminated.genus.csv` (surviving species summed
+to genus) and `genus_rollup_excluded.tsv`: species with no genus directly above them (e.g.
+endosymbionts, `synthetic_construct`) stay in the species table but are listed there, with their
+counts, instead of being summed into a genus.
 
 To decontaminate an existing consensus table without rerunning anything upstream:
 

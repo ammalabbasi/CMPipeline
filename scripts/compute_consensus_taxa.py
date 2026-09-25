@@ -85,6 +85,8 @@ bracken_species_df = bracken_species_df[~bracken_species_df['clade_name'].str.co
 bracken_species_df = bracken_species_df.dropna(subset=['clade_name'])
 bracken_species_df['genus_name'] = bracken_species_df['clade_name'].str.split(r'\|g__', expand=True)[1].str.split(r'\|s__', expand=True)[0]
 bracken_species_df['species_name'] = bracken_species_df['clade_name'].str.split(r'\|g__', expand=True)[1].str.split(r'\|s__', expand=True)[1]
+# A species with no genus in its lineage cannot join a genus whitelist; it is dropped, and counted.
+species_without_genus = int(bracken_species_df['species_name'].isna().sum())
 bracken_species_df = bracken_species_df.dropna(subset=['species_name'])
 
 # Per-sample library sizes, from the cleaned Bracken tables BEFORE any consensus filtering.
@@ -173,6 +175,7 @@ status = [
     ("consensus_eligibility_basis", "samples with a MetaPhlAn profile (Bracken-module gate on KrakenUniq root count)"),
     ("genus_rows_out", len(bracken_genus_output)),
     ("species_rows_out", len(bracken_species_output)),
+    ("species_without_genus_dropped", species_without_genus),
 ]
 pd.DataFrame(status, columns=["key", "value"]).to_csv(args.output_status, sep="\t", index=False)
 

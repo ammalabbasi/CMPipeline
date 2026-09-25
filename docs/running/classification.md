@@ -64,6 +64,7 @@ This includes the case where no sample cleared the gate and MetaPhlAn never ran.
 | `samples_in_bracken`, `samples_with_metaphlan`, `samples_used_for_consensus` | the sample counts at each step |
 | `samples_above_min_reads` | samples whose Bracken **genus** total reaches the threshold. Reported for comparison only; the gate uses the KrakenUniq root count |
 | `genus_rows_out`, `species_rows_out` | rows in the output tables |
+| `species_without_genus_dropped` | non-viral Bracken species with no `g__` in their lineage (e.g. endosymbionts, `synthetic_construct`), left out because they cannot join a genus |
 
 Check `mode` before interpreting a run's taxa: a pass-through table has not been filtered by
 agreement between the two profilers. The cohort report shows the same status.

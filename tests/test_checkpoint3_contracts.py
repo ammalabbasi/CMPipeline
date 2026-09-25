@@ -1,5 +1,6 @@
 """Focused behavioral tests for the June-Young integration corrections."""
 import csv
+import importlib.util
 import os
 import subprocess
 import sys
@@ -77,9 +78,58 @@ class CountAndMask(unittest.TestCase):
 
     def test_genus_sums_only_surviving_species(self):
         table = self.write("decontam.csv", "clade_name,X,Z\nd__B|g__G|s__G_a,10,0\nd__B|g__G|s__G_b,7,2\n")
-        r = self.run_script("aggregate_decontaminated_species.py", "--input", table, "--output", "genus.csv")
+        r = self.run_script("aggregate_decontaminated_species.py", "--input", table, "--output", "genus.csv",
+                            "--excluded", "excluded.tsv")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(read_counts(self.d / "genus.csv", "g", delimiter=",")[1], {"d__B|g__G": {"X": 17, "Z": 2}})
+        with open(self.d / "excluded.tsv") as f:
+            self.assertEqual(list(csv.DictReader(f, delimiter="\t")), [])
+
+    def test_species_without_genus_parent_is_listed_not_summed(self):
+        # Lineages as they occur in real Bracken species tables.
+        table = self.write("decontam.csv", "clade_name,X,Z\n"
+                           "d__B|g__G|s__G_a,10,0\n"
+                           "d__Bacteria|s__unidentified_bacterial_endosymbiont,4,0\n"
+                           "d__B|p__P|c__C|o__O|f__F|s__Coxiella-like_endosymbiont,0,3\n"
+                           "s__synthetic_construct,5,6\n"
+                           "d__B|g__H|x__odd|s__H_a,2,2\n")
+        r = self.run_script("aggregate_decontaminated_species.py", "--input", table, "--output", "genus.csv",
+                            "--excluded", "excluded.tsv")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(read_counts(self.d / "genus.csv", "g", delimiter=",")[1], {"d__B|g__G": {"X": 10, "Z": 0}})
+        with open(self.d / "excluded.tsv") as f:
+            rows = {r["taxon"]: r for r in csv.DictReader(f, delimiter="\t")}
+        self.assertEqual(set(rows), {"d__Bacteria|s__unidentified_bacterial_endosymbiont",
+                                     "d__B|p__P|c__C|o__O|f__F|s__Coxiella-like_endosymbiont",
+                                     "s__synthetic_construct", "d__B|g__H|x__odd|s__H_a"})
+        self.assertEqual(rows["s__synthetic_construct"]["reason"], "no genus in lineage")
+        self.assertEqual(rows["s__synthetic_construct"]["total_count"], "11")
+        self.assertEqual(rows["s__synthetic_construct"]["samples_present"], "2")
+        self.assertEqual(rows["d__B|g__H|x__odd|s__H_a"]["reason"], "genus is not the direct parent")
+
+    @unittest.skipUnless(all(importlib.util.find_spec(m) for m in ("pandas", "seaborn", "adjustText")),
+                         "consensus env (pandas/seaborn/adjustText) not available")
+    def test_consensus_counts_species_without_genus(self):
+        genus = self.write("g.tsv", "clade_name\tX\tZ\nd__B|g__G\t10\t2\n")
+        species = self.write("s.tsv", "clade_name\tX\tZ\nd__B|g__G|s__G_a\t10\t2\n"
+                             "d__Bacteria|s__unidentified_bacterial_endosymbiont\t4\t0\n"
+                             "s__synthetic_construct\t5\t6\n")
+        r = self.run_script("compute_consensus_taxa.py", "--bracken_genus", genus, "--bracken_species", species,
+                            "--output", "plot.pdf", "--output_common_genus", "cg.tsv",
+                            "--output_common_species", "cs.tsv", "--output_library_sizes", "lib.tsv",
+                            "--output_status", "status.tsv")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(self.d / "status.tsv") as f:
+            status = {row["key"]: row["value"] for row in csv.DictReader(f, delimiter="\t")}
+        self.assertEqual(status["species_without_genus_dropped"], "2")
+        self.assertEqual(status["species_rows_out"], "1")
+
+    def test_genus_rollup_with_no_genus_at_all_fails(self):
+        table = self.write("decontam.csv", "clade_name,X\ns__synthetic_construct,5\n")
+        r = self.run_script("aggregate_decontaminated_species.py", "--input", table, "--output", "genus.csv",
+                            "--excluded", "excluded.tsv")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("genus table would be empty", r.stderr)
 
     def test_root_count_missing_invalid_duplicate_and_true_zero(self):
         text = (ROOT / "Modules/Bracken.nf").read_text()
