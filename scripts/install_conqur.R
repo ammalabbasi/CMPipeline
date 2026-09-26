@@ -1,4 +1,7 @@
 #!/usr/bin/env Rscript
+# Superseded: the pipeline no longer uses this script. ConQuR and cqrReg now come as conda packages
+# from conda_envs/local_channel/ (conda_envs/recipes/). Kept as the record of the previous install
+# method; its pins must still match params.conqur_sha (tests/test_docs.py).
 # Installs the two batch-correction packages conda cannot provide, at EXACT versions, into the
 # active environment (built from conda_envs/batch_correction_env.yml; see
 # conda_envs/build_envs.sbatch, which runs this for you):

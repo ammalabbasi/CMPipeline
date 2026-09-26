@@ -46,6 +46,10 @@ def env_params():
     for p in NF_SOURCES + CONFIGS:
         for name, value in PARAM_ENV_RE.findall(_strip_comments(_read(p))):
             out.setdefault(name, value.replace("${projectDir}", str(REPO)))
+    # The batch env default is computed (lib/BatchEnv.groovy fills in the local channel), not a
+    # quoted path; its source lockfile is the one below.
+    if "params.batch_corr_env = BatchEnv.lockfile(" in _read(REPO / "main.nf"):
+        out.setdefault("batch_corr_env", str(LOCK / "batch_correction_env.linux-64.txt"))
     return out
 
 
@@ -104,17 +108,11 @@ class CondaEnvHygiene(unittest.TestCase):
                       "Modules/extract_reads.nf does not cite the locked samtools version; re-check the "
                       "routing on it (cmpipeline/CHECK_ROUND2.sh) and update the comment")
 
-    def test_prebuilt_env_lockfiles_have_no_defaults_channel(self):
-        """Lockfiles that build_envs.sbatch writes for pre-built envs (batch correction)."""
-        stems = sbatch_prebuilt_ymls(set(env_params().values()))
-        self.assertTrue(stems, "build_envs.sbatch no longer builds a pre-built env")
-        for stem in sorted(stems):
-            lf = LOCK / f"{stem}.linux-64.txt"
-            with self.subTest(lockfile=lf.name):
-                if not lf.exists():
-                    self.skipTest(f"{lf.name} not written yet (conda_envs/build_envs.sbatch "
-                                  "has not finished section 3)")
-                self.assertNotIn("repo.anaconda.com", _read(lf))
+    def test_no_env_is_prebuilt_outside_nextflow(self):
+        """Every environment, batch correction included, is built by Nextflow from a lockfile;
+        build_envs.sbatch no longer builds a fixed shared prefix for any params.*_env."""
+        self.assertEqual(sbatch_prebuilt_ymls(set(env_params().values())), set())
+        self.assertTrue(env_params()["batch_corr_env"].endswith("batch_correction_env.linux-64.txt"))
 
 
 class ConfigHygiene(unittest.TestCase):

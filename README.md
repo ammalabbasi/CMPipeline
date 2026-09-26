@@ -53,11 +53,12 @@ cd CMPipeline
 | MetaPhlAn 4 database (vJun23) | `--metaphlan_db` | classification |
 | ChocoPhlAn v201901_v31 + UniRef90 | `--humann3_nucleotide_db`, `--humann3_protein_db` | HUMAnN 3 only |
 
-### 4. Batch-correction environment (only if you use batch correction)
+### 4. Batch-correction environment
 
-ConQuR is not packaged for conda, so batch correction runs in a pre-built environment:
-`sbatch conda_envs/build_envs.sbatch` builds it, with cqrReg 1.2.1 and the pinned ConQuR commit, and
-`--batch_corr_env` points at it. See the [batch-correction guide](docs/running/batch_correction.md).
+Nothing to prepare: Nextflow builds it from its lockfile like every other environment. ConQuR
+(the pinned `ivartb/ConQuR_par` commit) and cqrReg 1.2.1 are on no conda channel, so they are
+shipped as conda packages in `conda_envs/local_channel/` (built from `conda_envs/recipes/`).
+See the [batch-correction guide](docs/running/batch_correction.md).
 
 ## Running CMPipeline
 

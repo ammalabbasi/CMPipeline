@@ -1,13 +1,11 @@
 # Batch correction (ConQuR) + normalisation. Versions pinned to the 2026-09-23 build. The exact
-# build is conda_envs/lock/batch_correction_env.linux-64.txt. ConQuR's CRAN dependencies now come
-# from conda-forge (audit D03): previously 28 of them were installed from CRAN at whatever version
-# CRAN served. Two things remain outside conda, installed by scripts/install_conqur.R at EXACT
-# versions: cqrReg 1.2.1 (not on conda-forge) and ConQuR itself (ivartb/ConQuR_par@ff233085).
-# ConQuR is the ivartb/ConQuR_par fork, not the upstream ConQuR repository, at the commit in
-# params.conqur_sha (main.nf); Modules/batch_correction.nf refuses any other install (audit A14/A17).
-# Change the pin in main.nf and scripts/install_conqur.R together (tests/test_docs.py checks).
-# Nextflow does not build this env: params.batch_corr_env points at a pre-built env with ConQuR
-# installed (conda_envs/build_envs.sbatch), because a fresh build would lack it (audit D04).
+# build is conda_envs/lock/batch_correction_env.linux-64.txt, which Nextflow builds. ConQuR's CRAN
+# dependencies come from conda-forge (audit D03). The two packages no channel provides, cqrReg 1.2.1
+# and ConQuR itself (ivartb/ConQuR_par@ff233085, params.conqur_sha in main.nf), are built from
+# conda_envs/recipes/ into conda_envs/local_channel/ and appended to that lockfile under
+# @LOCAL_CHANNEL@; Modules/batch_correction.nf refuses any other ConQuR (audit A14/A17).
+# Change the pin in main.nf, the r-conqur recipe and scripts/install_conqur.R together
+# (tests/test_docs.py, tests/test_local_conda_channel.py check).
 name: batch_correction_env
 channels:
   - conda-forge

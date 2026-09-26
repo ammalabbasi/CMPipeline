@@ -135,7 +135,7 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--humann3_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
 | `--decontam_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
 | `--validation_env` | `conda_envs/lock/<env>.linux-64.txt` | the locked conda environment for each tool |
-| `--batch_corr_env` | none (the `tscc` profile sets a site prefix) | prefix built by `scripts/setup_batch_env.sh`; required when batch correction runs |
+| `--batch_corr_env` | the batch lockfile with the repository's local channel (built by Nextflow) | optional: a pre-built prefix instead, e.g. from `scripts/setup_batch_env.sh` |
 | `--batch_corr_seed` | `1` | RNG seed for batch correction; hold allocated CPUs and environment fixed for repeat comparisons |
 | `--antismash_env` | `conda_envs/antismash_env.yml`, `ANTISMASH/` | reserved for the antiSMASH module in `Modules/antismash.nf`, which `main.nf` does not currently call |
 | `--batch_corr_method` | `tune` | `tune` (auto-phased Tune_ConQuR) or `vanilla` (default ConQuR settings). Nothing else is accepted: ComBat is not implemented |

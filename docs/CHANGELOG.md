@@ -80,10 +80,10 @@ and rejected outright if it is not a boolean.
 - HUMAnN3 receives each sample's MetaPhlAn profile as an input instead of reading the
   published output directory while MetaPhlAn was still writing to it.
 - `--metaphlan_index` replaces the index name that was hardcoded in two modules.
-- Batch correction runs in a pre-built environment (`--batch_corr_env`) built by
-  `conda_envs/build_envs.sbatch`, which installs the pinned ConQuR fork with
-  `scripts/install_conqur.R`; the conda YAML cannot, as ConQuR is not packaged for conda. The
-  workflow checks the installed commit against `--conqur_sha` before it starts.
+- The batch-correction environment is built by Nextflow from its lockfile like the others.
+  ConQuR (the pinned `ivartb/ConQuR_par` fork) and cqrReg 1.2.1, which no conda channel provides,
+  are built from `conda_envs/recipes/` and shipped in `conda_envs/local_channel/`; no pre-built
+  prefix is needed. The workflow checks the installed commit against `--conqur_sha` before it starts.
 
 **Infrastructure**
 - Resource ceilings use `process.resourceLimits` rather than a helper function in

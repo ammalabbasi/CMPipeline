@@ -12,24 +12,21 @@
 # No data is touched. Run from anywhere:   sbatch conda_envs/build_envs.sbatch
 #
 #  1. envs whose yml did NOT change are locked from the build today's runs used (no rebuild)
-#  2. metaphlan4 / humann3 / batch_correction are built fresh from their yml, then locked
-#  3. the batch-correction env is built at a FIXED shared prefix and gets cqrReg + the pinned
-#     ConQuR (scripts/install_conqur.R); params.batch_corr_env points there, because a
-#     Nextflow-built copy from the lockfile would lack ConQuR
+#  2. metaphlan4 / humann3 are built fresh from their yml, then locked
+#  3. (batch correction: see the note at step 3 below; Nextflow builds it)
 # Lockfiles: conda_envs/lock/<env>.linux-64.txt  (`conda list --explicit --md5`)
 set -euo pipefail
 REPO=/tscc/lustre/restricted/alexandrov-ddn/users/shared/OncoBiomeProfiler-paper/workflow/CMPipeline
 CACHE=$REPO/.conda_cache
 LOCK=$REPO/conda_envs/lock
 STAGE=/tscc/lustre/restricted/alexandrov-ddn/users/amabbasi/cmp_env_build
-BATCH_PREFIX=/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/envs/batch_correction_20260923
 source /tscc/projects/ps-lalexandrov/amabbasi/anaconda3/etc/profile.d/conda.sh
 export CONDA_CHANNEL_PRIORITY=strict
 # Never let ~/.local or a shell PYTHONPATH leak into the import checks (audit D13): job 12331453
 # failed because the HUMAnN env's metaphlan imported a broken ~/.local pandas.
 export PYTHONNOUSERSITE=1
 unset PYTHONPATH
-mkdir -p "$LOCK" "$STAGE" "$(dirname $BATCH_PREFIX)"
+mkdir -p "$LOCK" "$STAGE"
 
 lock() {  # lock <env prefix> <name>
     conda list --explicit --md5 -p "$1" > "$LOCK/$2.linux-64.txt"
@@ -69,23 +66,9 @@ done
 "$STAGE/humann3_env/bin/humann" --version
 "$STAGE/humann3_env/bin/metaphlan" --version
 
-echo "== 3. batch correction at a fixed prefix, plus cqrReg + pinned ConQuR"
-# The env that produced results is never replaced silently (audit D02): an existing prefix is kept
-# (ConQuR install below is verified, not redone) unless REBUILD=1, and a rebuild uses the LOCKFILE,
-# so it gets the exact packages the results came from. Only with no lockfile is the yml solved.
-BATCH_LOCK="$LOCK/batch_correction_env.linux-64.txt"
-if [[ -x "$BATCH_PREFIX/bin/Rscript" && "${REBUILD:-0}" != 1 ]]; then
-    echo "keeping existing $BATCH_PREFIX (REBUILD=1 to replace it)"
-else
-    rm -rf "$BATCH_PREFIX"
-    if [[ -s "$BATCH_LOCK" ]]; then
-        conda create -q -y -p "$BATCH_PREFIX" --file "$BATCH_LOCK"
-    else
-        conda env create -q -p "$BATCH_PREFIX" -f "$REPO/conda_envs/batch_correction_env.yml"
-        lock "$BATCH_PREFIX" batch_correction_env
-    fi
-fi
-conda activate "$BATCH_PREFIX"
-Rscript "$REPO/scripts/install_conqur.R"
-conda deactivate
+# == 3. batch correction: no longer built here. Nextflow builds it from
+# lock/batch_correction_env.linux-64.txt, whose two @LOCAL_CHANNEL@ lines are the r-cqrreg and
+# r-conqur packages in conda_envs/local_channel/ (built from conda_envs/recipes/ by
+# scripts/build_local_conda_packages.sh). If that lockfile is ever regenerated, keep those two
+# lines, with the @LOCAL_CHANNEL@ prefix, at the end of the file.
 echo "== done  $(date)"

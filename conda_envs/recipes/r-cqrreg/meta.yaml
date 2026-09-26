@@ -1,0 +1,45 @@
+# cqrReg 1.2.1 from CRAN, compiled like the validated environment compiled it:
+# gcc/gxx 15.3.0 and r-base 4.3.3 (hc28aa72_21) with R's own Makeconf flags.
+{% set version = "1.2.1" %}
+
+package:
+  name: r-cqrreg
+  version: {{ version }}
+
+source:
+  # Current CRAN release; the Archive URL takes over once a newer version is published.
+  url:
+    - https://cran.r-project.org/src/contrib/cqrReg_{{ version }}.tar.gz
+    - https://cran.r-project.org/src/contrib/Archive/cqrReg/cqrReg_{{ version }}.tar.gz
+  sha256: c235d0ef31e171c7197656bee73429c93c094e80e2ffc856d9b5341caa85089d
+
+build:
+  number: 0
+  rpaths:
+    - lib/R/lib/
+    - lib/
+  script: ${R} CMD INSTALL --build .
+
+requirements:
+  build:
+    - gcc 15.3.0 hc6a0c74_5
+    - gxx 15.3.0 hc6a0c74_5
+    - make 4.4.1 hb03c661_3
+  host:
+    - r-base 4.3.3 hc28aa72_21
+    - r-rcpp 1.1.0 r43h93ab643_0
+    - r-rcpparmadillo 15.0.2_1 r43h3704496_0
+    - r-quantreg 6.1 r43h012206f_0
+  run:
+    - r-base 4.3.3.*
+    - r-rcpp
+    - r-quantreg
+
+test:
+  commands:
+    - $R -e "library('cqrReg'); stopifnot(as.character(packageVersion('cqrReg')) == '{{ version }}')"
+
+about:
+  home: https://cran.r-project.org/package=cqrReg
+  license: GPL-2.0-or-later
+  summary: Quantile, composite quantile regression and regularized versions

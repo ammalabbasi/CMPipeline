@@ -16,7 +16,7 @@ consensus/Bracken when decontamination is off, or from an existing table with
 | `--tumor_only` | `false` | correct tumours only. Which types count as tumours is `--batch_corr_tumor_values` |
 | `--batch_corr_tumor_values` | `Tumor` | comma-separated, case-insensitive. Not the same as decontamination's `--positive_values`, which means "not a control" |
 | `--batch_corr_allow_uncorrected` | `false` | a failed correction stops the run. `true` continues with the raw counts, published as `corrected/UNCORRECTED_passthrough.tsv`, never under a corrected name |
-| `--batch_corr_env` | explicit prepared prefix (TSCC profile supplies a site default) | see setup guide below |
+| `--batch_corr_env` | built by Nextflow from the batch lockfile | optional pre-built prefix; see setup guide below |
 | `--batch_corr_seed` | `1` | RNG seed; hold allocated CPUs and environment fixed for repeat comparisons |
 | `--conqur_sha` | `ff233085…` | the ConQuR commit the script was written against; any other install is refused |
 

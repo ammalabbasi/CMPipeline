@@ -51,11 +51,11 @@ process BatchCorrection {
     export R_LIBS_USER="\$CONDA_PREFIX/lib/R/library"
     export R_LIBS_SITE="\$CONDA_PREFIX/lib/R/library"
     export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
-    # ConQuR is installed from GitHub, not from the conda YAML, so an environment built
-    # only with `conda env create` is missing it. Fail here with the fix rather than
-    # partway through the R script.
+    # ConQuR comes from the repository's local conda channel (conda_envs/local_channel/). A
+    # pre-built env passed with --batch_corr_env may lack it: fail here with the fix rather
+    # than partway through the R script.
     # Presence is not enough: it must be the pinned fork the script was written against (audit A14).
-    Rscript --vanilla -e 'if (!requireNamespace("ConQuR", quietly = TRUE)) stop("ConQuR is not installed in this environment (env: ", Sys.getenv("CONDA_PREFIX"), "). Run: Rscript ${params.scripts}/install_conqur.R with the batch-correction env active"); sha <- utils::packageDescription("ConQuR")\$RemoteSha; if (is.null(sha) || !startsWith(sha, "${params.conqur_sha}")) stop("ConQuR in this environment is not ivartb/ConQuR_par@${params.conqur_sha} (found: ", if (is.null(sha)) "no RemoteSha" else sha, "; env: ", Sys.getenv("CONDA_PREFIX"), "). Run: CONQUR_FORCE=1 Rscript ${params.scripts}/install_conqur.R")'
+    Rscript --vanilla -e 'if (!requireNamespace("ConQuR", quietly = TRUE)) stop("ConQuR is not installed in this environment (env: ", Sys.getenv("CONDA_PREFIX"), "). Use the default environment (conda_envs/lock/batch_correction_env.linux-64.txt, built by Nextflow) or rebuild the prefix with scripts/setup_batch_env.sh"); sha <- utils::packageDescription("ConQuR")\$RemoteSha; if (is.null(sha) || !startsWith(sha, "${params.conqur_sha}")) stop("ConQuR in this environment is not ivartb/ConQuR_par@${params.conqur_sha} (found: ", if (is.null(sha)) "no RemoteSha" else sha, "; env: ", Sys.getenv("CONDA_PREFIX"), "). Use the default environment or rebuild the prefix with scripts/setup_batch_env.sh")'
 
     # Every value quoted: the TCGA preset's type column is 'Sample Type_x' (audit A03).
     Rscript --vanilla "${params.batch_corr_script}" \\

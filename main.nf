@@ -213,9 +213,11 @@ params.metaphlan4_env = "${projectDir}/conda_envs/lock/metaphlan4_env.linux-64.t
 params.humann3_env = "${projectDir}/conda_envs/lock/humann3_env.linux-64.txt"
 params.decontam_env = "${projectDir}/conda_envs/lock/decontam_env.linux-64.txt"
 params.validation_env = "${projectDir}/conda_envs/lock/validation_env.linux-64.txt"
-// Batch correction runs in a PRE-BUILT env (lockfile + cqrReg 1.2.1 + pinned ConQuR, built by
-// conda_envs/build_envs.sbatch): a fresh build from the lockfile alone would lack ConQuR (audit D04).
-params.batch_corr_env = null  // Set --batch_corr_env to the prefix built by scripts/setup_batch_env.sh
+// Batch correction: Nextflow builds this env from the lockfile like the others. ConQuR and cqrReg,
+// which no channel provides, come from conda_envs/local_channel/ (built from conda_envs/recipes/);
+// BatchEnv writes the lockfile with that channel's absolute path into <workDir>/conda_locks/.
+// --batch_corr_env <prefix> still selects a pre-built env instead.
+params.batch_corr_env = BatchEnv.lockfile(projectDir, workflow.workDir)
 params.antismash_env = "${projectDir}/conda_envs/antismash_env.yml"
 params.batch_corr_method = "tune"  // ConQuR mode: "tune" (auto-phased Tune_ConQuR) or "vanilla"
 
@@ -531,7 +533,7 @@ workflow {
     // every upstream stage (audit C04/C17; decision 16 for the covariates).
     if (runBatchCorrection) {
         requirePathParam('batch_corr_env', params.batch_corr_env,
-            'for batch correction; build a user-owned prefix with scripts/setup_batch_env.sh')
+            'for batch correction (default: the lockfile with the repository\'s local conda channel)')
         if (!params.batch_corr_seed.toString().isInteger() || params.batch_corr_seed.toString().toLong() < 0 || params.batch_corr_seed.toString().toLong() > 2147483647L)
             error "--batch_corr_seed must be an integer between 0 and 2147483647"
         // No input table for batch correction: decided HERE, before any channel exists. Raised

@@ -12,7 +12,7 @@
 #
 # Usage: tests/integration/run_integration.sh <fixture_dir>
 #   NEXTFLOW=<nextflow>          default: nextflow on PATH
-#   CMP_IT_BATCH_CORR_ENV=<dir>  batch-correction env prefix; default --batch_corr_env from main.nf
+#   CMP_IT_BATCH_CORR_ENV=<dir>  pre-built batch-correction env prefix; default: the env Nextflow builds
 #   CMP_IT_SKIP_RUNS=1           only regenerate fixtures and re-check existing outputs
 # Prints PASS/FAIL per assertion and counts only. Exit status = number of failed assertions.
 set -uo pipefail
@@ -26,7 +26,9 @@ NEXTFLOW="${NEXTFLOW:-nextflow}"
 # The pipeline's own samtools and minimap2 envs build the fixtures (same versions the run uses).
 SAMTOOLS_BIN="${SAMTOOLS_BIN:-$REPO/.conda_cache/env-fcc8f6adcd9d7d83ce3eda3244306cdd/bin}"
 MINIMAP2_BIN="${MINIMAP2_BIN:-$REPO/.conda_cache/env-8a53a5d3b3e246627eb5ffa09b5e2bcd/bin}"
-BATCH_ENV="${CMP_IT_BATCH_CORR_ENV:-/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/envs/batch_correction_20260923}"
+# Batch correction uses the env Nextflow builds from the lockfile unless a pre-built prefix is given.
+BATCH_ENV_ARGS=()
+[[ -n "${CMP_IT_BATCH_CORR_ENV:-}" ]] && BATCH_ENV_ARGS=(--batch_corr_env "$CMP_IT_BATCH_CORR_ENV")
 
 # Only ever wipe a directory this script created (marker file), never an arbitrary path.
 MARK="$FX/.cmp_integration_fixture"
@@ -60,16 +62,15 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
     echo $? > "$FX/runA/exit_status"
     echo "INFO  run A exit $(cat "$FX/runA/exit_status")"
 
-    if [[ -d "$BATCH_ENV" ]]; then BC=on; else BC=off; fi
+    BC=on
     echo "INFO  run B (--start_from decontam, batch correction $BC) ..."
-    [[ $BC == off ]] && echo "SKIP  batch correction leg: env not found at $BATCH_ENV (set CMP_IT_BATCH_CORR_ENV)"
     ( cd "$FX/runB" && "$NEXTFLOW" run "$REPO/main.nf" "${common[@]}" \
         --start_from decontam --outdir "$FX/runB/results" \
         --consensus_otu_table "$F/decontam/genus_table.tsv" \
         --decontam_library_sizes "$F/decontam/library_sizes.tsv" \
         --metadata_file "$F/decontam/metadata.tsv" \
         --run_batch_correction "$([[ $BC == on ]] && echo true || echo false)" \
-        --batch_corr_env "$BATCH_ENV" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runB/nextflow.stdout" 2>&1
+        "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runB/nextflow.stdout" 2>&1
     echo $? > "$FX/runB/exit_status"
     echo "$BC" > "$FX/runB/batch_correction"
     echo "INFO  run B exit $(cat "$FX/runB/exit_status")"
@@ -82,7 +83,7 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
             --consensus_otu_table "$F/batch/genus_table.tsv" \
             --decontam_library_sizes "$F/batch/library_sizes.tsv" \
             --metadata_file "$F/batch/metadata.tsv" --run_batch_correction true \
-            --batch_corr_env "$BATCH_ENV" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runC/nextflow.stdout" 2>&1
+            "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runC/nextflow.stdout" 2>&1
         echo $? > "$FX/runC/exit_status"
         echo "INFO  run C exit $(cat "$FX/runC/exit_status")"
     fi
@@ -93,7 +94,7 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
         --consensus_otu_table "$F/batch/genus_table.tsv" \
         --decontam_library_sizes "$F/batch/library_sizes.tsv" \
         --metadata_file "$F/batch/metadata_nocov.tsv" --run_batch_correction true \
-        --batch_corr_env "$BATCH_ENV" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runD/nextflow.stdout" 2>&1
+        "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runD/nextflow.stdout" 2>&1
     echo $? > "$FX/runD/exit_status"
 fi
 

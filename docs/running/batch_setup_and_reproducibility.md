@@ -1,34 +1,25 @@
-# Independent batch environment and reproducible execution
+# Batch environment and reproducible execution
 
-These are package-supported commands, not user-side R patches. The supplied batch
-lockfile targets Linux x86_64. Run installation and analysis on a compute node when
-using HPC; obtain sufficient resources with the site's normal scheduler commands.
+The supplied batch lockfile targets Linux x86_64. Run analysis on a compute node when using HPC;
+obtain sufficient resources with the site's normal scheduler commands.
 
-## Fresh user-owned environment
+## Environment
 
-From the repository root:
+Nextflow builds the batch-correction environment from
+`conda_envs/lock/batch_correction_env.linux-64.txt`, exactly like the other environments; nothing
+needs to be installed beforehand. The lockfile ends with two packages that no conda channel
+provides, r-cqrreg 1.2.1 and r-conqur (`ivartb/ConQuR_par` at
+`ff233085cedc36a24382038067a4cece3e94e0a0`). They are committed as conda packages in
+`conda_envs/local_channel/` and named in the lockfile under `@LOCAL_CHANNEL@`, which the workflow
+replaces with that directory's absolute path (the resolved lockfile is written to
+`<work-dir>/conda_locks/`). They were built by `scripts/build_local_conda_packages.sh` from
+`conda_envs/recipes/`, from the same checksum-verified sources and against the lockfile's own
+r-base and compilers; the lockfile pins them by md5. Before running, the module checks that the
+installed ConQuR is the pinned commit.
 
-```bash
-bash scripts/setup_batch_env.sh --prefix /absolute/new/batch-env --conda /path/to/conda
-```
-
-The prefix must not exist. The helper installs the exact batch lockfile, then
-checksum-verified cqrReg 1.2.1 and ConQuR_par commit
-`ff233085cedc36a24382038067a4cece3e94e0a0`. It does not overwrite a shared prefix or
-install packages during analysis. A failed partial prefix is retained for diagnosis;
-use a new prefix for an explicitly approved retry. No automatic deletion/rebuild.
-
-For an offline R-source cache, supply `--source-dir /path/to/tarballs`, containing
-`cqrReg_1.2.1.tar.gz` and
-`ConQuR_par-ff233085cedc36a24382038067a4cece3e94e0a0.tar.gz`. The helper checks its
-embedded expected hashes, not a cache owner's mutable manifest. Conda packages must
-still be cached or downloadable. Without `--source-dir`, the helper downloads these
-sources from CRAN and GitHub and checks the same hashes.
-
-`cmp_batch_versions.tsv`, `cmp_batch_lock.sha256`, and `cmp_batch_sources.sha256`
-inside the new prefix document setup; the normal pipeline provenance records the
-environment actually used. Source-download and package-cache availability are
-external prerequisites; an offline-cache test does not certify online retrieval.
+Optional: `bash scripts/setup_batch_env.sh --prefix /absolute/new/batch-env` builds the same
+environment into a prefix for `--batch_corr_env` (e.g. to reuse it across runs). The prefix must
+not exist; `cmp_batch_versions.tsv` and `cmp_batch_lock.sha256` inside it record the build.
 
 ## Official standalone batch entry
 
@@ -39,14 +30,13 @@ nextflow run main.nf -profile local -c my-resources.config \
   --sample_id_column patient --type_column sample_type --batch_column shipment_batch \
   --taxon_column clade_name --taxonomic_rank species \
   --batch_corr_covariates sample_type --batch_corr_seed 314159 \
-  --batch_corr_env /absolute/new/batch-env --outdir /absolute/new/results
+  --outdir /absolute/new/results
 ```
 
 Choose covariates from the actual study design; `sample_type` here illustrates a
 functional Tumor/Normal test, not a replacement for required age/sex/BMI adjustment.
 The tuned minimum of 20 eligible samples and per-batch selection rules are unchanged.
-The portable default no longer assumes a TSCC batch prefix. The `tscc` profile keeps
-the site's optional shared prefix; an explicit `--batch_corr_env` overrides it.
+No profile needs a site-specific batch prefix; `--batch_corr_env` is only an optional override.
 
 For a bounded two-CPU test allocation, `my-resources.config` can contain:
 
