@@ -70,6 +70,15 @@ class TraceParsingTests(unittest.TestCase):
         self.assertEqual(FP.process_name("filterReads (SAMPLE1)"), "filterReads")
         self.assertEqual(FP.process_name("consensus_taxa"), "consensus_taxa")
 
+    def test_local_channel_batch_packages_are_reported(self):
+        """A lockfile-built batch env lists ConQuR and cqrReg by their conda package names."""
+        envs = {"batch_corr_env": {"kind": "lockfile", "packages": [
+            "r-base=4.3.3=hc28aa72_21", "r-conqur=2.0=r43_0", "r-cqrreg=1.2.1=r43_0", "zlib=1.3=h1"]}}
+        picked = FP.software_summary(envs)["batch_corr_env"]
+        self.assertIn("r-conqur=2.0", picked)
+        self.assertIn("r-cqrreg=1.2.1", picked)
+        self.assertNotIn("zlib=1.3", picked)
+
     def test_summary_groups_by_process_and_counts_failures(self):
         rows = FP.read_trace_rows = [
             dict(zip(TRACE_HEADER.split("\t"), trace_row("filterReads (A)").split("\t"))),

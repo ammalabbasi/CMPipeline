@@ -107,6 +107,7 @@ INTERESTING = {
     "krakenuniq", "kraken2", "bracken", "metaphlan", "humann", "skani", "r-base",
     "bioconductor-decontam", "bioconductor-phyloseq", "r-vegan", "r-zcompositions",
     "r-quantreg", "r-glmnet", "python", "pandas", "ConQuR", "cqrReg",
+    "r-conqur", "r-cqrreg",   # the same two, as the local-channel conda packages (lockfile env)
 }
 
 # R packages installed into the batch-correction env from GitHub/CRAN after the conda
