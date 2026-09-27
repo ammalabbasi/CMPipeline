@@ -57,7 +57,9 @@ cd CMPipeline
 
 Nothing to prepare: Nextflow builds it from its lockfile like every other environment. ConQuR
 (the pinned `ivartb/ConQuR_par` commit) and cqrReg 1.2.1 are on no conda channel, so they are
-shipped as conda packages in `conda_envs/local_channel/` (built from `conda_envs/recipes/`).
+shipped as conda packages in `conda_envs/local_channel/` (built from `conda_envs/recipes/`;
+sources and licenses: `conda_envs/local_channel/NOTICE.md`). The checkout path may contain only
+letters, digits and `. _ / + -`.
 See the [batch-correction guide](docs/running/batch_correction.md).
 
 ## Running CMPipeline

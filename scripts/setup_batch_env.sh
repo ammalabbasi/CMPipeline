@@ -13,6 +13,8 @@ while (( $# )); do
   esac
 done
 [[ "$PREFIX" = /* && "$PREFIX" != / ]] || { printf 'An absolute new --prefix is required\n' >&2; exit 2; }
+# Same rule as lib/BatchEnv.groovy: the path goes into the lockfile as a file:// URL, unescaped.
+[[ "$ROOT" =~ ^[A-Za-z0-9._/+-]+$ ]] || { printf 'The pipeline checkout path may contain only letters, digits and . _ / + -: %s\n' "$ROOT" >&2; exit 2; }
 [[ ! -e "$PREFIX" ]] || { printf 'Refusing to overwrite existing prefix: %s\n' "$PREFIX" >&2; exit 2; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { printf 'This lockfile supports Linux x86_64 only\n' >&2; exit 2; }
 CONDA_BIN=$(command -v "$CONDA_BIN")

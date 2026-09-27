@@ -2,7 +2,8 @@
 # Build the two batch-correction packages that no conda channel provides (r-cqrreg, r-conqur) from
 # conda_envs/recipes/ into a new output channel directory. Linux x86_64; needs conda-forge access.
 # The committed packages in conda_envs/local_channel/ were built with this script; the batch
-# lockfile lists them by checksum, so a rebuild is only needed to change them.
+# lockfile lists them by checksum, so a rebuild is only needed to change them. A rebuild has not been
+# shown to be byte-identical; compare it functionally, as the validation job did.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT= CONDA_BIN=${CONDA_EXE:-conda}
@@ -18,8 +19,9 @@ done
 CONDA_BIN=$(command -v "$CONDA_BIN")
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/cmp-conda-build.XXXXXX")
 trap 'rm -rf -- "$WORK"' EXIT
-# A throwaway builder environment; its package list is kept with the output for provenance.
-"$CONDA_BIN" create --yes --quiet --prefix "$WORK/builder" --override-channels -c conda-forge conda-build
+# A throwaway builder environment from the committed explicit list (the conda-build that built
+# the committed packages); its package list is kept with the output for provenance.
+"$CONDA_BIN" create --yes --quiet --prefix "$WORK/builder" --file "$ROOT/conda_envs/local_channel/builder_environment.explicit.txt"
 "$CONDA_BIN" list --prefix "$WORK/builder" --explicit --md5 > "$WORK/builder.explicit.txt"
 BUILD=("$WORK/builder/bin/conda-build" --override-channels -c conda-forge --croot "$WORK/croot"
        --output-folder "$OUT" --no-anaconda-upload)

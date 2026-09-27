@@ -84,6 +84,9 @@ and rejected outright if it is not a boolean.
   ConQuR (the pinned `ivartb/ConQuR_par` fork) and cqrReg 1.2.1, which no conda channel provides,
   are built from `conda_envs/recipes/` and shipped in `conda_envs/local_channel/`; no pre-built
   prefix is needed. The workflow checks the installed commit against `--conqur_sha` before it starts.
+  Their upstream sources and license texts are committed alongside
+  (`conda_envs/local_channel/NOTICE.md`). The checkout path may contain only letters, digits and
+  `. _ / + -`, since it is written into the lockfile as a `file://` URL.
 
 **Infrastructure**
 - Resource ceilings use `process.resourceLimits` rather than a helper function in

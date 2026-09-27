@@ -70,7 +70,7 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
         --decontam_library_sizes "$F/decontam/library_sizes.tsv" \
         --metadata_file "$F/decontam/metadata.tsv" \
         --run_batch_correction "$([[ $BC == on ]] && echo true || echo false)" \
-        "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runB/nextflow.stdout" 2>&1
+        ${BATCH_ENV_ARGS[@]+"${BATCH_ENV_ARGS[@]}"} --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runB/nextflow.stdout" 2>&1
     echo $? > "$FX/runB/exit_status"
     echo "$BC" > "$FX/runB/batch_correction"
     echo "INFO  run B exit $(cat "$FX/runB/exit_status")"
@@ -83,7 +83,7 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
             --consensus_otu_table "$F/batch/genus_table.tsv" \
             --decontam_library_sizes "$F/batch/library_sizes.tsv" \
             --metadata_file "$F/batch/metadata.tsv" --run_batch_correction true \
-            "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runC/nextflow.stdout" 2>&1
+            ${BATCH_ENV_ARGS[@]+"${BATCH_ENV_ARGS[@]}"} --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runC/nextflow.stdout" 2>&1
         echo $? > "$FX/runC/exit_status"
         echo "INFO  run C exit $(cat "$FX/runC/exit_status")"
     fi
@@ -94,7 +94,7 @@ if [[ "${CMP_IT_SKIP_RUNS:-0}" != 1 ]]; then
         --consensus_otu_table "$F/batch/genus_table.tsv" \
         --decontam_library_sizes "$F/batch/library_sizes.tsv" \
         --metadata_file "$F/batch/metadata_nocov.tsv" --run_batch_correction true \
-        "${BATCH_ENV_ARGS[@]}" --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runD/nextflow.stdout" 2>&1
+        ${BATCH_ENV_ARGS[@]+"${BATCH_ENV_ARGS[@]}"} --batch_corr_covariates age_diag,sex,bmi ) > "$FX/runD/nextflow.stdout" 2>&1
     echo $? > "$FX/runD/exit_status"
 fi
 

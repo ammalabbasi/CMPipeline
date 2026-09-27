@@ -12,9 +12,15 @@ provides, r-cqrreg 1.2.1 and r-conqur (`ivartb/ConQuR_par` at
 `ff233085cedc36a24382038067a4cece3e94e0a0`). They are committed as conda packages in
 `conda_envs/local_channel/` and named in the lockfile under `@LOCAL_CHANNEL@`, which the workflow
 replaces with that directory's absolute path (the resolved lockfile is written to
-`<work-dir>/conda_locks/`). They were built by `scripts/build_local_conda_packages.sh` from
+`<work-dir>/conda_locks/`, under a name that includes a digest of its content, and is never
+rewritten). The path goes into the lockfile unescaped, so the pipeline checkout path may contain
+only letters, digits and `. _ / + -`; anything else stops the run with that message.
+Moving the checkout changes the lockfile, so Nextflow builds the environment again.
+The conda cache defaults to `<checkout>/.conda_cache` (`nextflow.config`): for a read-only
+checkout set `NXF_CONDA_CACHEDIR` to a writable directory. They were built by `scripts/build_local_conda_packages.sh` from
 `conda_envs/recipes/`, from the same checksum-verified sources and against the lockfile's own
-r-base and compilers; the lockfile pins them by md5. Before running, the module checks that the
+r-base and compilers; the lockfile pins them by md5. The upstream sources and license texts are
+committed too (`conda_envs/local_channel/NOTICE.md`). Before running, the module checks that the
 installed ConQuR is the pinned commit.
 
 Optional: `bash scripts/setup_batch_env.sh --prefix /absolute/new/batch-env` builds the same

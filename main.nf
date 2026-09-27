@@ -215,7 +215,8 @@ params.decontam_env = "${projectDir}/conda_envs/lock/decontam_env.linux-64.txt"
 params.validation_env = "${projectDir}/conda_envs/lock/validation_env.linux-64.txt"
 // Batch correction: Nextflow builds this env from the lockfile like the others. ConQuR and cqrReg,
 // which no channel provides, come from conda_envs/local_channel/ (built from conda_envs/recipes/);
-// BatchEnv writes the lockfile with that channel's absolute path into <workDir>/conda_locks/.
+// BatchEnv writes the lockfile with that channel's absolute path into <workDir>/conda_locks/
+// (file name includes a content digest; the checkout path may contain only [A-Za-z0-9._/+-]).
 // --batch_corr_env <prefix> still selects a pre-built env instead.
 params.batch_corr_env = BatchEnv.lockfile(projectDir, workflow.workDir)
 params.antismash_env = "${projectDir}/conda_envs/antismash_env.yml"

@@ -103,7 +103,8 @@ Each tool environment is built from an exact lockfile, `conda_envs/lock/<env>.li
 **Batch correction** is built by Nextflow from `lock/batch_correction_env.linux-64.txt` like the
 other environments. Its two packages that no channel provides, r-cqrreg 1.2.1 and r-conqur
 (`ivartb/ConQuR_par` at `--conqur_sha`), come from `conda_envs/local_channel/`; the lockfile names
-them under `@LOCAL_CHANNEL@`, which the workflow replaces with that directory's absolute path. The
+them under `@LOCAL_CHANNEL@`, which the workflow replaces with that directory's absolute path (so
+the checkout path may contain only letters, digits and `. _ / + -`). The
 workflow checks the installed ConQuR commit before execution. `--batch_corr_env <prefix>` still
 selects a pre-built environment (`scripts/setup_batch_env.sh` builds one from the same lockfile).
 See [batch setup and reproducibility](running/batch_setup_and_reproducibility.md).

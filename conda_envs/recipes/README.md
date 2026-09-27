@@ -9,4 +9,9 @@ matches the environment the pipeline was validated with.
 
 The built packages are committed under conda_envs/local_channel/ and listed in the batch lockfile;
 Nextflow then builds the batch environment itself, like every other environment.
-Rebuild with scripts/build_local_conda_packages.sh (Linux x86_64, network for conda-forge).
+Rebuild with scripts/build_local_conda_packages.sh (Linux x86_64, network for conda-forge, CRAN
+and GitHub); it creates the builder from local_channel/builder_environment.explicit.txt. A rebuild
+has not been shown to be byte-identical to the committed packages; compare it functionally.
+
+sources/ holds the unchanged upstream source archives (the recipes' checksums), and licenses/
+the GPL-2 text; licensing and attribution: ../local_channel/NOTICE.md.
