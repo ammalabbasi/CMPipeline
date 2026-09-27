@@ -16,6 +16,7 @@ import java.security.MessageDigest
  * The result is written to <workDir>/conda_locks/ under a name that includes a digest of its
  * content, and never rewritten: runs from different checkouts sharing a work directory get
  * different files, and a file Nextflow has hashed cannot change before the env is built.
+ * An existing file with other content (edited or damaged) stops the run instead of being used.
  * The checkout itself is not written here (conda.cacheDir still defaults to it: nextflow.config).
  */
 class BatchEnv {
@@ -40,6 +41,8 @@ class BatchEnv {
             tmp.setText(text, 'UTF-8')
             Files.move(tmp, out, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }
+        if (out.getText('UTF-8') != text)
+            throw new IllegalStateException("${out} does not have the content its name records; it was changed after it was written. Remove it and run again")
         return out.toString()
     }
 }

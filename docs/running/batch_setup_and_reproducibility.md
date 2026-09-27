@@ -13,8 +13,10 @@ provides, r-cqrreg 1.2.1 and r-conqur (`ivartb/ConQuR_par` at
 `conda_envs/local_channel/` and named in the lockfile under `@LOCAL_CHANNEL@`, which the workflow
 replaces with that directory's absolute path (the resolved lockfile is written to
 `<work-dir>/conda_locks/`, under a name that includes a digest of its content, and is never
-rewritten). The path goes into the lockfile unescaped, so the pipeline checkout path may contain
-only letters, digits and `. _ / + -`; anything else stops the run with that message.
+rewritten; an existing file whose content differs stops the run). The file is created by an atomic
+move; on a file system without atomic moves that step fails with an error rather than continuing. The path goes into the lockfile unescaped, so the pipeline checkout path may contain
+only letters, digits and `. _ / + -`; anything else (including spaces, `@` and a literal `~`)
+stops the run with that message.
 Moving the checkout changes the lockfile, so Nextflow builds the environment again.
 The conda cache defaults to `<checkout>/.conda_cache` (`nextflow.config`): for a read-only
 checkout set `NXF_CONDA_CACHEDIR` to a writable directory. They were built by `scripts/build_local_conda_packages.sh` from

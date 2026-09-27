@@ -16,7 +16,8 @@ repository.
   `https://codeload.github.com/ivartb/ConQuR_par/tar.gz/ff233085cedc36a24382038067a4cece3e94e0a0`.
 - License texts: GPL-2 in `conda_envs/recipes/licenses/GPL-2` (copied from R 4.3.3,
   `share/licenses/GPL-2`); GPL-3 is the `LICENSE` file inside the ConQuR source archive.
-- Built with `scripts/build_local_conda_packages.sh` from `conda_envs/recipes/`. No source code
-  was modified. At build time ConQuR's `DESCRIPTION` gets `Remote*`/`Github*` fields that record
-  the commit (`conda_envs/recipes/r-conqur/build.sh`); cqrReg is built as distributed.
+- Built with `scripts/build_local_conda_packages.sh` from `conda_envs/recipes/` on 2026-09-26.
+  No source code was modified. At build time (2026-09-26) ConQuR's `DESCRIPTION` got
+  `Remote*`/`Github*` fields that record the commit (`conda_envs/recipes/r-conqur/build.sh`);
+  cqrReg is built as distributed.
 - Both programs come with no warranty; see their licenses.

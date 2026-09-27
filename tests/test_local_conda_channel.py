@@ -143,6 +143,14 @@ class ResolvedLockfile(unittest.TestCase):
             digest = hashlib.sha256(text.encode()).hexdigest()[:16]
             self.assertEqual(p.name, f"batch_correction_env.linux-64.{digest}.txt")
 
+    def test_changed_existing_file_stops_the_run(self):
+        a = self.checkout("a")
+        pa = self.lockpath(self.run_nf(a))
+        pa.write_text(pa.read_text().replace("#", "#0", 1))
+        r = self.run_nf(a)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("does not have the content its name records", r.stdout + r.stderr)
+
     def test_unsafe_checkout_path_stops_the_run(self):
         for name in ("with space", "hash#dir", "amp&dir"):
             with self.subTest(name=name):
