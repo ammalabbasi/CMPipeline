@@ -325,6 +325,16 @@ class UniqueReadBins(unittest.TestCase):
         self.assertEqual(row["status"], "failed", row)
         self.assertIn("unique_fraction", row["fail_reason"])
 
+    def test_wrong_label_with_few_unique_reads_still_fails_identity(self):
+        # 2026-09-30 re-score: cells with < --min_support unique reads were marked insufficient before
+        # identity was looked at, so 473 wrong-label cells (3-7% divergent) kept their counts.
+        self.lines = [l.replace("NM:i:0", "NM:i:6") if "\tMin_sp|" in l else l for l in self.lines]
+        self.minor = [l.replace("NM:i:0", "NM:i:6") for l in self.minor]
+        row = self.score(20, "--min_unique_frac", "0.02")["Min_sp"]
+        self.assertEqual(row["status"], "failed", row)
+        self.assertIn("identity", row["fail_reason"])
+        self.assertNotIn("bins_ratio", row["fail_reason"])   # spread not judged on 20 unique reads
+
 
 class Mask(unittest.TestCase):
     def test_only_failed_cells_are_zeroed_and_genus_rolls_up(self):

@@ -39,9 +39,10 @@ Status, tested in this order (thresholds are arguments; defaults from the 2026-0
   insufficient      supporting reads over all genomes < --min_support (Bracken too low to test, or
                     --min_confirmed..--min_support-1 supporting reads)
   failed            unique_fraction < --min_unique_frac (a shadow of another species; audit B03)
-  insufficient      reads on the best genome used for bins < --min_support (all of them, or only the
-                    unique ones with --bins_reads unique): spread thin over many genomes, or too few
-                    reads of its own to test spread
+  insufficient      reads on the best genome < --min_support (spread thin over many genomes)
+  failed            identity < --min_identity (all supporting reads), whatever the unique-read depth
+  insufficient      with --bins_reads unique: fewer than --min_support UNIQUE reads on the best genome,
+                    so spread cannot be judged (fail_reason unique_reads_for_bins<N; count kept)
   validated         bins_ratio >= --min_bins_ratio and identity >= --min_identity
   failed            otherwise; fail_reason lists every test that failed
   not_in_reference  the taxon has no genome in the validation reference, or is Homo_sapiens
@@ -314,14 +315,24 @@ class SampleScorer:
                     elif not ufrac >= a.min_unique_frac:
                         fail.append(f"unique_fraction<{a.min_unique_frac:g}")
                         status = "failed"
-                    elif nb < a.min_support:
+                    elif n < a.min_support:
                         status = "insufficient"
                     else:
-                        if not bins_ratio >= a.min_bins_ratio:
-                            fail.append(f"bins_ratio<{a.min_bins_ratio:g}")
+                        # Identity pools every supporting read of the taxon, so it is judged at the same
+                        # depth as before. Only spread needs the taxon's own (unique) reads: with too
+                        # few of them the cell cannot be validated, but a wrong label still fails on
+                        # identity (2026-09-30 re-score: 473 identity failures had escaped as insufficient).
                         if not med >= a.min_identity:
                             fail.append(f"identity<{a.min_identity:g}")
-                        status = "failed" if fail else "validated"
+                        if nb >= a.min_support and not bins_ratio >= a.min_bins_ratio:
+                            fail.append(f"bins_ratio<{a.min_bins_ratio:g}")
+                        if fail:
+                            status = "failed"
+                        elif nb < a.min_support:
+                            status = "insufficient"
+                            fail.append(f"unique_reads_for_bins<{a.min_support}")
+                        else:
+                            status = "validated"
                 if status == "validated":
                     validated.append(t)
                 row["status"] = status
