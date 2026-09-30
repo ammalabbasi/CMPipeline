@@ -4,6 +4,18 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Alignment validation judged spread on reads shared with relatives (audit 2026-09-30, V01/V02).**
+  The bins test counted every supporting read, including reads tied with another species. For a
+  species present at low abundance next to an abundant relative, those shared reads pile into the
+  regions the two genomes have in common, so the species failed `bins_ratio` although it was there
+  (22 of 42 such cases in a synthetic benchmark on public genomes), while absent relatives could
+  validate (18 of 58). Bins and the reads-on-genome gate are now computed on reads unique to the
+  species (`--validation_bins_reads unique`, new, default), and `--validation_min_unique_frac` is 0.05
+  (was 0.02). Benchmark: minors 29 validated / 4 failed, decoys 1 of 58 validated, uniform species
+  129 of 131. `--validation_bins_reads all --validation_min_unique_frac 0.02` restores the old rule.
+  New stats columns `bins_reads`, `reads_for_bins`. Identity 0.98 is unchanged: on CRC50 the identity
+  failures sat at 4–10 mismatches per 151 bp, validated cells at 0–3.
+
 - **Read extraction was dropping reads and writing sequences into task logs.**
   `extract_reads.nf` called `samtools fastq -N -o FILE`. With `-o`, samtools writes only
   READ1/READ2 to the file and sends **category-0 records** — reads flagged neither READ1 nor

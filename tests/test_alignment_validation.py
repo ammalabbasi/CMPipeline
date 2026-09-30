@@ -273,6 +273,59 @@ class AuditFixes(unittest.TestCase):
         self.assertEqual(rows["Homo_sapiens"]["status"], "not_in_reference")
 
 
+class UniqueReadBins(unittest.TestCase):
+    """Audit 2026-09-30 V01: a present minor species next to an abundant relative must not fail
+    bins because of the reads it shares with that relative (they pile into conserved regions)."""
+
+    def setUp(self):
+        self.d = d = tempfile.mkdtemp()
+        big = 2_000_000                     # 200 bins of 10 kb, so 60 spread reads do not saturate
+        with open(f"{d}/contigs.tsv", "w") as f:
+            f.write("contig\tlabel\taccession\tlength\n")
+            f.write(f"Maj_sp|acc_maj|c1\tMaj_sp\tacc_maj\t{big}\n")
+            f.write(f"Min_sp|acc_min|c1\tMin_sp\tacc_min\t{big}\n")
+        with open(f"{d}/table.tsv", "w") as f:
+            f.write("clade_name\tX\nd__B|g__Maj|s__Maj_sp\t2000\nd__B|g__Min|s__Min_sp\t660\n")
+        self.lines = []
+        for i in range(1200):                # the abundant relative: unique, spread
+            self.lines.append(sam_line(f"maj{i}", 0, "Maj_sp|acc_maj|c1", (i * 1601) % (big - 200)))
+        for i in range(600):                 # conserved region: tied Maj/Min, all inside one 20 kb window
+            p = 500_000 + (i * 29) % 19_800
+            self.lines.append(sam_line(f"sh{i}", 0, "Maj_sp|acc_maj|c1", p))
+            self.lines.append(sam_line(f"sh{i}", 256, "Min_sp|acc_min|c1", p))
+        self.minor = [sam_line(f"min{i}", 0, "Min_sp|acc_min|c1", i * 33_000) for i in range(60)]
+
+    def score(self, n_minor=60, *extra):
+        with open(f"{self.d}/x.sam", "w") as f:   # the minor species' own reads, spread over its genome
+            f.writelines(self.lines + self.minor[:n_minor])
+        r = subprocess.run([sys.executable, str(S / "validation_score.py"), "--sam", f"{self.d}/x.sam",
+                            "--sample", "X", "--contigs", f"{self.d}/contigs.tsv",
+                            "--species_table", f"{self.d}/table.tsv", "--out_dir", self.d, *extra],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return {row["taxon"]: row for row in csv.DictReader(open(f"{self.d}/X.validation_stats.tsv"), delimiter="\t")}
+
+    def test_minor_species_validates_on_its_unique_reads(self):
+        rows = self.score()
+        self.assertEqual(rows["Min_sp"]["status"], "validated", rows["Min_sp"])
+        self.assertEqual((rows["Min_sp"]["bins_reads"], rows["Min_sp"]["reads_for_bins"]), ("unique", "60"))
+        self.assertEqual(rows["Maj_sp"]["status"], "validated")
+
+    def test_all_reads_rule_reproduces_the_false_failure(self):
+        row = self.score(60, "--bins_reads", "all", "--min_unique_frac", "0.02")["Min_sp"]
+        self.assertEqual(row["status"], "failed", row)
+        self.assertIn("bins_ratio", row["fail_reason"])
+
+    def test_too_few_unique_reads_to_judge_spread_is_insufficient(self):
+        # 20 unique of 620 reads: ufrac 0.032 passes 0.02, but 20 < --min_support unique reads on the genome
+        row = self.score(20, "--min_unique_frac", "0.02")["Min_sp"]
+        self.assertEqual(row["status"], "insufficient", row)
+        # at the new default 0.05 the same cell is a shadow of its relative
+        row = self.score(20)["Min_sp"]
+        self.assertEqual(row["status"], "failed", row)
+        self.assertIn("unique_fraction", row["fail_reason"])
+
+
 class Mask(unittest.TestCase):
     def test_only_failed_cells_are_zeroed_and_genus_rolls_up(self):
         d = tempfile.mkdtemp()

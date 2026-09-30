@@ -156,6 +156,7 @@ process alignForValidation {
             --min_bins_ratio ${params.validation_min_bins_ratio} \\
             --min_identity ${params.validation_min_identity} \\
             --min_unique_frac ${params.validation_min_unique_frac} \\
+            --bins_reads ${params.validation_bins_reads} \\
             ${export_arg}
     """
 }

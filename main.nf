@@ -163,7 +163,8 @@ params.validation_min_support = 25        // reads on the best genome; below thi
 params.validation_min_confirmed = 10      // Bracken >= min_support but < this many supporting reads: unsupported, zeroed (decision 29)
 params.validation_min_bins_ratio = 0.5    // 10 kb windows hit / expected (per read pair)
 params.validation_min_identity = 0.98     // median 1 - NM/aligned columns
-params.validation_min_unique_frac = 0.02  // unique / (unique + shared) reads
+params.validation_min_unique_frac = 0.05  // unique / (unique + shared) reads; 0.02 until 2026-09-30 (audit V01/V02)
+params.validation_bins_reads = 'unique'   // reads the bins test uses: unique (default) | all (2026-09-23 rule)
 params.validation_max_genomes = 50        // RefSeq genomes per species, before de-duplication
 params.validation_dedup_ani = 99.5        // skani ANI at which two genomes of a species are one
 params.validation_max_missing_frac = 0.10 // fail if more species than this get no genome
@@ -407,6 +408,9 @@ workflow {
          validation_max_missing_frac: params.validation_max_missing_frac].each { name, v ->
             def x = v.toString().isNumber() ? v.toString().toDouble() : -1
             if (x < 0 || x > 1) error "--${name} must be a number in [0, 1] (got '${v}')"
+        }
+        if (!(params.validation_bins_reads.toString() in ['unique', 'all'])) {
+            error "--validation_bins_reads must be 'unique' or 'all' (got '${params.validation_bins_reads}')"
         }
         [validation_min_support: params.validation_min_support,
          validation_min_confirmed: params.validation_min_confirmed,

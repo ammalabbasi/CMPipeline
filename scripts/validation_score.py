@@ -20,7 +20,12 @@ which is how host depletion hands them over, as one interleaved FASTQ):
 Per taxon, measured on its best-supported genome (the accession with most supporting reads):
   breadth_ratio    covered bases / expected under uniform sampling, 1 - exp(-N*L/G)
   bins_ratio       10 kb windows hit / expected, counting each FRAGMENT (read name) once, since
-                   mates ~500 bp apart would otherwise halve the apparent spread
+                   mates ~500 bp apart would otherwise halve the apparent spread. With --bins_reads
+                   unique (default, 2026-09-30) only fragments UNIQUE to the taxon are used, and the
+                   expectation is taken from their count: reads shared with an abundant relative pile
+                   into conserved regions and failed truly present minor species (audit V01: 22/42
+                   synthetic minors failed; 4/42 with unique-read bins). --bins_reads all restores
+                   the 2026-09-23 rule.
   median_identity  1 - NM / aligned columns, over all supporting alignments
   unique_fraction  unique / (unique + shared) reads
 
@@ -34,7 +39,9 @@ Status, tested in this order (thresholds are arguments; defaults from the 2026-0
   insufficient      supporting reads over all genomes < --min_support (Bracken too low to test, or
                     --min_confirmed..--min_support-1 supporting reads)
   failed            unique_fraction < --min_unique_frac (a shadow of another species; audit B03)
-  insufficient      reads on the best genome < --min_support (spread thin over many genomes)
+  insufficient      reads on the best genome used for bins < --min_support (all of them, or only the
+                    unique ones with --bins_reads unique): spread thin over many genomes, or too few
+                    reads of its own to test spread
   validated         bins_ratio >= --min_bins_ratio and identity >= --min_identity
   failed            otherwise; fail_reason lists every test that failed
   not_in_reference  the taxon has no genome in the validation reference, or is Homo_sapiens
@@ -103,7 +110,10 @@ def main(argv=None):
                     help="with >= min_support Bracken reads, fewer supporting reads than this is 'unsupported' (zeroed)")
     ap.add_argument("--min_bins_ratio", type=float, default=0.5)
     ap.add_argument("--min_identity", type=float, default=0.98)
-    ap.add_argument("--min_unique_frac", type=float, default=0.02)
+    ap.add_argument("--min_unique_frac", type=float, default=0.05,
+                    help="0.02 until 2026-09-30; 0.05 with unique-read bins (audit V01/V02)")
+    ap.add_argument("--bins_reads", choices=("unique", "all"), default="unique",
+                    help="reads the bins test is computed on (default unique; 'all' = 2026-09-23 rule)")
     ap.add_argument("--bin_size", type=int, default=10_000)
     ap.add_argument("--export_reads", action="store_true",
                     help="write <sample>.validated_reads.fasta.gz (reads supporting validated taxa)")
@@ -188,7 +198,7 @@ def main(argv=None):
 COLS = ["sample", "taxon", "members", "bracken_reads", "minimap2_count", "supporting_reads", "unique_reads",
         "multi_reads", "unique_fraction", "best_genome", "reads_on_best", "genome_len",
         "observed_breadth", "expected_breadth", "breadth_ratio", "bins_hit", "bins_expected",
-        "bins_ratio", "median_identity", "status", "fail_reason"]
+        "bins_ratio", "median_identity", "status", "fail_reason", "bins_reads", "reads_for_bins"]
 
 
 class SampleScorer:
@@ -203,7 +213,8 @@ class SampleScorer:
             self.bracken[taxon(lab)] += counts[sample]
             self.members[taxon(lab)].add(lab)
         self.uniq = collections.Counter(); self.multi = collections.Counter()
-        # (taxon, accession) -> list of (contig, start, end, identity, fragment_name, read_len)
+        # (taxon, accession) -> list of (contig, start, end, identity, fragment_name, read_len, unique)
+        # unique: every best hit of the read is on this taxon (no tie with another taxon)
         self.support = collections.defaultdict(list)
         self.tmpdir = tempfile.mkdtemp(prefix="valreads_") if a.export_reads else None
         self.handles = {}
@@ -219,7 +230,7 @@ class SampleScorer:
             hit = next((x for x in top if taxon(x[1].split("|", 1)[0]) == t and x[4]),
                        next(x for x in top if taxon(x[1].split("|", 1)[0]) == t))
             acc = hit[1].split("|")[1]
-            self.support[(t, acc)].append((hit[1], hit[2], hit[2] + hit[3], hit[5], qname, hit[3]))
+            self.support[(t, acc)].append((hit[1], hit[2], hit[2] + hit[3], hit[5], qname, hit[3], len(taxa) == 1))
             # Export only reads that are NOT tied with human (audit B10): a read whose best hits
             # include human is not evidence for a microbe, whatever else it also matches.
             if self.tmpdir and t != HUMAN_LABEL and HUMAN_LABEL not in taxa and seq and seq != "*":
@@ -267,8 +278,13 @@ class SampleScorer:
                     n, acc = max(sup)
                     hits = support[(t, acc)]
                     by_contig = collections.defaultdict(list); frag_bin = {}
-                    for c, st, en, ident, q, rl in hits:
+                    for c, st, en, ident, q, rl, u in hits:
                         by_contig[c].append((st, en))
+                    # Spread is judged on the reads the taxon does not share (audit V01), unless
+                    # --bins_reads all. Breadth (reported only) and identity still use every read.
+                    bhits = [h for h in hits if h[6]] if a.bins_reads == "unique" else hits
+                    nb = len(bhits)
+                    for c, st, en, ident, q, rl, u in bhits:
                         frag_bin.setdefault(q.rsplit("/", 1)[0], (c, st // a.bin_size))
                     G = self.genome_len[acc]
                     L = sum(h[5] for h in hits) / len(hits)
@@ -282,7 +298,8 @@ class SampleScorer:
                                observed_breadth=f"{obs:.6f}", expected_breadth=f"{exp:.6f}",
                                breadth_ratio=f"{obs / exp:.4f}" if exp else "NA",
                                bins_hit=len(set(frag_bin.values())), bins_expected=f"{be:.2f}",
-                               bins_ratio=f"{bins_ratio:.4f}", median_identity=f"{med:.4f}")
+                               bins_ratio=f"{bins_ratio:.4f}", median_identity=f"{med:.4f}",
+                               bins_reads=a.bins_reads, reads_for_bins=nb)
                     total = row["supporting_reads"]
                     # Order matters (audit B03, 2026-09-23). A shadow -- every read shared with
                     # another taxon -- is detectable from all its supporting reads, however
@@ -297,7 +314,7 @@ class SampleScorer:
                     elif not ufrac >= a.min_unique_frac:
                         fail.append(f"unique_fraction<{a.min_unique_frac:g}")
                         status = "failed"
-                    elif n < a.min_support:
+                    elif nb < a.min_support:
                         status = "insufficient"
                     else:
                         if not bins_ratio >= a.min_bins_ratio:
