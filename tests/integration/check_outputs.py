@@ -20,7 +20,13 @@ REQUIRED_QC_COLUMNS = [
     "reads_host_depleted", "pct_retained_overall", "pct_retained_of_library",
     "bracken_microbial_reads", "cleared_consensus_gate", "bracken_genera", "bracken_species",
     "decontam_sample_type", "decontam_role", "decontam_final_status",
+    # --extract_low_score_mapped (L8)
+    "upstream_aligner", "upstream_aligner_version", "upstream_bwa_min_score", "low_as_mode",
+    "low_as_mode_reason", "low_as_reads_extracted", "low_as_no_as_records",
+    "low_as_reads_after_depletion", "low_as_reads_classified", "low_as_share_of_bracken",
 ]
+LOW_AS_QC = ("low_as_mode", "low_as_mode_reason", "upstream_aligner", "low_as_reads_extracted",
+             "low_as_reads_after_depletion", "low_as_reads_classified")
 
 results = []
 
@@ -83,6 +89,22 @@ def run_a(fx, run, expected):
                   got_p == str(e["library_primary_records"]), f"got {got_p}")
             check(f"A: {e['kind']} extracted_unmapped_records == {e['extracted_unmapped_records']}",
                   got_u == str(e["extracted_unmapped_records"]), f"got {got_u}")
+        # --extract_low_score_mapped (L8): per-sample decision and rescued count
+        if rows:
+            got = rows[0].get("low_as_reads_extracted")
+            check(f"A: {s} extract_counts low_as_reads_extracted == {e['low_as_reads_extracted']}",
+                  got == str(e["low_as_reads_extracted"]), f"got {got}")
+        f = res / f"UNMAPPED_BAM/{s}.upstream_aligner.tsv"
+        dec = read_tsv(f) if f.exists() else []
+        check(f"A: {s} upstream_aligner.tsv says {e['low_as_mode']} ({e['low_as_mode_reason']})",
+              len(dec) == 1 and (dec[0].get("low_as_mode"), dec[0].get("low_as_mode_reason")) ==
+              (e["low_as_mode"], e["low_as_mode_reason"]),
+              f"got {[(d.get('low_as_mode'), d.get('low_as_mode_reason')) for d in dec]}")
+        surv = res / f"QC_SUMMARY/low_as_survival/{s}.low_as_survival.tsv"
+        check(f"A: {s} low_as_survival.tsv {'written' if e['low_as_mode'] == 'on' else 'absent (rescue off)'}",
+              surv.exists() == (e["low_as_mode"] == "on"))
+    ids = list((res / "UNMAPPED_BAM").glob("*.low_as_read_ids.txt.gz")) if (res / "UNMAPPED_BAM").exists() else []
+    check("A: rescued read-name list not published without --save_intermediates", not ids, f"{len(ids)} files")
     leaked = [p.name for p in (res / "UNMAPPED_BAM").glob("*.f*q.gz")] if (res / "UNMAPPED_BAM").exists() else []
     check("A: no intermediate read files published without --save_intermediates (C11)",
           not leaked, f"{len(leaked)} read files")
@@ -156,6 +178,8 @@ def run_a(fx, run, expected):
             check(f"A: QC {s} {col} == {e[col]}", r.get(col) == str(e[col]), f"got {r.get(col)}")
         check(f"A: QC {s} bracken_microbial_reads == {e['microbial_reads']}",
               r.get("bracken_microbial_reads") == str(e["microbial_reads"]), f"got {r.get('bracken_microbial_reads')}")
+        for col in LOW_AS_QC:
+            check(f"A: QC {s} {col} == {e[col]}", r.get(col) == str(e[col]), f"got {r.get(col)}")
         check(f"A: QC {s} cleared_consensus_gate == false", r.get("cleared_consensus_gate") == "false",
               f"got {r.get('cleared_consensus_gate')}")
         check(f"A: QC {s} decontam_role filled", r.get("decontam_final_status") not in (None, "", "NA"),
@@ -165,6 +189,12 @@ def run_a(fx, run, expected):
     check("A: cohort report", (res / "QC_SUMMARY/cmp_cohort_report.html").exists())
     prov = list((run / "pipeline_info/provenance").glob("*.json")) if (run / "pipeline_info/provenance").exists() else []
     check("A: provenance record written", len(prov) >= 1, f"{len(prov)} files")
+    on = sum(1 for e in samples.values() if e["low_as_mode"] == "on")
+    off = sum(1 for e in samples.values() if e["low_as_mode"] == "off")
+    report = run / "pipeline_info/RUN_REPORT.txt"
+    text = report.read_text() if report.exists() else ""
+    check(f"A: RUN_REPORT LOW-SCORE RESCUE section (off {off}, on {on})",
+          "LOW-SCORE RESCUE" in text and f"off {off}   on {on}" in text)
 
 
 def run_b(fx, run, expected, batch_correction):

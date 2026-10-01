@@ -72,6 +72,7 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--sample` | `samples.csv` | **required**: the sample sheet CSV (`patient` + FASTQ, BAM or CRAM columns) |
 | `--input_data_type` | `auto` | auto | bam | cram | fastq |
 | `--cram_reference` | `null` | optional matching FASTA for CRAM decoding |
+| `--extract_low_score_mapped` | `auto` | `auto` \| `on` \| `off`. BAM/CRAM only: also extract PRIMARY mapped records with `AS:i` < 30, the reads a default `bwa mem` (`-T 30`) would have left unmapped. `auto` is on only when the input's `@PG` runs `bwa mem` / `bwa-mem2 mem` with `-T` < 30 (GDC TCGA BAMs: `-T 0`); off for STAR, minimap2, `bwa aln`, `bwa mem` at the default `-T`, or no `@PG`. Decided per sample and recorded in the QC summary. See [running/classification.md](running/classification.md#low-score-mapped-reads-tcga-gdc-bams) |
 | `--outdir` | `RESULTS/` in the launch directory | where every stage publishes (see *Outputs*) |
 | `--unmapped_bam_dir` | ``--outdir`/UNMAPPED_BAM` | where `UNMAPPED_BAM/` is published; defaults to `UNMAPPED_BAM` under `--outdir` |
 | `--mapped_reads_dir` | ``--outdir`/MAPPED_READS` | where `MAPPED_READS/` is published; defaults to `MAPPED_READS` under `--outdir` |

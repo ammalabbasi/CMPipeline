@@ -110,6 +110,7 @@ The main options. [`docs/parameters.md`](docs/parameters.md) lists all of them.
 | `--sample` | CSV path | Yes | the sample sheet |
 | `--input_data_type` | `auto` (default), `bam`, `cram`, `fastq` | No | select or check the input format |
 | `--cram_reference` | FASTA path | No | the CRAM reference when it is not embedded |
+| `--extract_low_score_mapped` | `auto` (default), `on`, `off` | No | also extract primary mapped reads with AS < 30 from BAM/CRAM; `auto` = on only for `bwa mem -T` < 30 (e.g. GDC TCGA) |
 | `--hg38_db`, `--t2t_phix_db` | `.mmi` paths | Yes | host-depletion indexes |
 | `--pangenome_db` | not set | No | extra pangenome depletion (one `.mmi` or a directory of them) |
 | `--kraken_db`, `--metaphlan_db` | directories | For classification | classifier databases |
@@ -176,7 +177,7 @@ Under `--outdir`; each folder can be moved with its own parameter.
 | `04_DECONTAMINATION/` | the decontaminated table, contaminant calls, per-sample roles |
 | `05_BATCH_CORRECTION/` | corrected tables, PERMANOVA summary, correction status |
 | `HUMANN3/` | gene families and pathways |
-| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 38 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 48 columns) and `cmp_cohort_report.html` |
 
 Run records (`trace.txt`, `report.html`, `RUN_REPORT.txt`, `provenance/`) go to `pipeline_info/` in the
 launch directory. Details: [Outputs](docs/outputs.md).

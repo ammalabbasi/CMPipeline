@@ -62,7 +62,17 @@ SAMPLES = {
     # One microbial read: below Bracken's -t 2 at every rank, so Bracken says "no reads found"
     # and the module must write a no-call instead of failing the cohort (audit C02).
     "itest_thin": dict(kind="fastq_single", mic_singles={3004: 1}, host_a_singles=2),
+    # --extract_low_score_mapped (L8): a GDC-style `bwa mem -T 0` BAM. Microbial reads reported MAPPED
+    # with AS < 30 (a short spurious host hit) must be rescued under the default `auto`; AS 30, no-AS,
+    # secondary and supplementary records must not. One rescued read is host, removed by depletion.
+    # The records are hand-written: bwa cannot seed on random synthetic host sequence.
+    "itest_bwa": dict(kind="bam_bwa", mic_pairs={3002: 3}, mic_singles={3004: 2},
+                      low_pairs={3001: 3}, low_half_pair_taxon=3003, low_single_taxon=3002,
+                      low_host_singles=1, mapped_host_pairs=6),
 }
+PG_BWA_T0 = ("@PG\tID:bwa\tPN:bwa\tVN:0.7.15-r1140\tCL:bwa mem -t 8 -T 0 "
+             "-R @RG\\tID:synthetic\\tSM:synthetic /ref/host.fa r1.fq r2.fq\n"
+             "@PG\tID:samtools\tPN:samtools\tPP:bwa\tVN:1.3\tCL:samtools sort\n")
 # Decontam roles/batches for the full run (run A): each batch holds >= 1 positive and 1 control.
 RUN_A_META = {
     "itest_bam": ("Tumor", "b1", 61, "F", 24.1),
@@ -70,6 +80,7 @@ RUN_A_META = {
     "itest_thin": ("Tumor", "b1", 70, "M", 22.5),
     "itest_cram": ("Tumor", "b2", 48, "F", 30.2),
     "itest_fq2": ("Blood", "b2", 66, "F", 25.0),
+    "itest_bwa": ("Tumor", "b2", 52, "M", 26.3),
 }
 
 
@@ -135,9 +146,72 @@ def mic_prefix(key):
 QUAL = "I" * READ_LEN
 
 
-def sam_line(name, flag, rname, pos, cigar, rnext, pnext, tlen, seq):
-    mapq = 60 if not (flag & 4) else 0
-    return "\t".join(map(str, [name, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, QUAL])) + "\n"
+def sam_line(name, flag, rname, pos, cigar, rnext, pnext, tlen, seq, tags=(), mapq=None):
+    if mapq is None:
+        mapq = 60 if not (flag & 4) else 0
+    return "\t".join(map(str, [name, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, QUAL, *tags])) + "\n"
+
+
+def build_bwa_alignment(sim, spec):
+    """A `bwa mem -T 0` style BAM: SAM text plus expected counts for the low-score rescue (L8)."""
+    lines = []
+    exp = dict(primary=0, unmapped=0, low=0, low_microbial=0, low_host=0, no_as=0, microbial=0)
+    high = ("NM:i:0", "AS:i:100", "XS:i:0")
+    # Ordinary host pairs, well mapped: never extracted.
+    for _ in range(spec["mapped_host_pairs"]):
+        n, r1, r2, p1, p2 = sim.pair("hostA", "hstA")
+        lines.append(sam_line(n, 99, "hostA", p1 + 1, "100M", "=", p2 + 1, FRAGMENT, r1, high))
+        lines.append(sam_line(n, 147, "hostA", p2 + 1, "100M", "=", p1 + 1, -FRAGMENT, revcomp(r2), high))
+        exp["primary"] += 2
+    # FLAG 4 microbial pairs and singles: extracted as always.
+    for key, count in spec["mic_pairs"].items():
+        for _ in range(count):
+            n, r1, r2, _, _ = sim.pair(mic_genome(key), mic_prefix(key))
+            lines.append(sam_line(n, 77, "*", 0, "*", "*", 0, 0, r1))
+            lines.append(sam_line(n, 141, "*", 0, "*", "*", 0, 0, r2))
+            exp["primary"] += 2; exp["unmapped"] += 2; exp["microbial"] += 2
+    for key, count in spec["mic_singles"].items():
+        for _ in range(count):
+            n, s, _ = sim.single(mic_genome(key), mic_prefix(key))
+            lines.append(sam_line(n, 4, "*", 0, "*", "*", 0, 0, s))
+            exp["primary"] += 1; exp["unmapped"] += 1; exp["microbial"] += 1
+    # Microbial pairs bwa -T 0 reported MAPPED to a spurious 20 bp host hit, AS 20 and AS 0:
+    # both mates rescued; mate 2 is on the reverse strand (SEQ stored reverse-complemented).
+    for key, count in spec["low_pairs"].items():
+        for _ in range(count):
+            n, r1, r2, _, _ = sim.pair(mic_genome(key), mic_prefix(key))
+            pos = sim.rng.randrange(1000, 50000)
+            lines.append(sam_line(n, 97, "hostA", pos, "20M80S", "=", pos + 200, 0, r1, ("NM:i:0", "AS:i:20"), 3))
+            lines.append(sam_line(n, 145, "hostA", pos + 200, "80S20M", "=", pos, 0, revcomp(r2), ("NM:i:0", "AS:i:0"), 0))
+            exp["primary"] += 2; exp["low"] += 2; exp["low_microbial"] += 2; exp["microbial"] += 2
+    # Mate 1 mapped low (AS 29: just below 30, rescued), mate 2 FLAG 4 placed at mate 1.
+    n, r1, r2, _, _ = sim.pair(mic_genome(spec["low_half_pair_taxon"]), mic_prefix(spec["low_half_pair_taxon"]))
+    pos = sim.rng.randrange(1000, 50000)
+    lines.append(sam_line(n, 73, "hostA", pos, "29M71S", "=", pos, 0, r1, ("NM:i:0", "AS:i:29"), 1))
+    lines.append(sam_line(n, 133, "hostA", pos, "*", "=", pos, 0, r2))
+    exp["primary"] += 2; exp["low"] += 1; exp["low_microbial"] += 1; exp["unmapped"] += 1; exp["microbial"] += 2
+    # Unpaired microbial read mapped low (category 0: no /1 /2): rescued.
+    n, s, _ = sim.single(mic_genome(spec["low_single_taxon"]), mic_prefix(spec["low_single_taxon"]))
+    pos = sim.rng.randrange(1000, 50000)
+    lines.append(sam_line(n, 0, "hostA", pos, "25M75S", "*", 0, 0, s, ("NM:i:0", "AS:i:25"), 0))
+    exp["primary"] += 1; exp["low"] += 1; exp["low_microbial"] += 1; exp["microbial"] += 1
+    # A host read reported with AS 25: rescued, then removed by GRCh38 (hostA) depletion.
+    for _ in range(spec["low_host_singles"]):
+        n, s, p = sim.single("hostA", "hstA")
+        lines.append(sam_line(n, 0, "hostA", p + 1, "25M75S", "*", 0, 0, s, ("NM:i:0", "AS:i:25"), 0))
+        exp["primary"] += 1; exp["low"] += 1; exp["low_host"] += 1
+    # Never rescued: AS exactly 30, a mapped record without AS (counted), and a secondary and a
+    # supplementary record with AS 5. All microbial-named, so a leak would show in Bracken.
+    n, s, _ = sim.single(mic_genome(3001), mic_prefix(3001))
+    lines.append(sam_line(n, 0, "hostA", 2001, "30M70S", "*", 0, 0, s, ("NM:i:0", "AS:i:30"), 0))
+    n, s, _ = sim.single(mic_genome(3001), mic_prefix(3001))
+    lines.append(sam_line(n, 0, "hostA", 3001, "20M80S", "*", 0, 0, s, ("NM:i:0",), 0))
+    exp["primary"] += 2; exp["no_as"] += 1
+    n, s, _ = sim.single(mic_genome(3001), mic_prefix(3001))
+    lines.append(sam_line(n, 256, "hostA", 4001, "20M80S", "*", 0, 0, s, ("NM:i:0", "AS:i:5"), 0))
+    n, s, _ = sim.single(mic_genome(3001), mic_prefix(3001))
+    lines.append(sam_line(n, 2048, "hostA", 5001, "20M80S", "*", 0, 0, s, ("NM:i:0", "AS:i:5"), 0))
+    return lines, exp
 
 
 def build_alignment(sim, spec, host_seqs, prefix):
@@ -270,7 +344,34 @@ def main():
     for sample, spec in SAMPLES.items():
         e = {"kind": spec["kind"]}
         taxa = {}
-        if spec["kind"] in ("bam", "cram"):
+        # --extract_low_score_mapped columns (L8): NA for FASTQ; off (no @PG -> auto_no_pg) for the
+        # plain BAM/CRAM fixtures, whose extraction must be exactly what it was before the rescue.
+        e.update(low_as_mode="NA", low_as_mode_reason="NA", upstream_aligner="NA",
+                 low_as_reads_extracted="NA", low_as_reads_after_depletion="NA", low_as_reads_classified="NA")
+        if spec["kind"] == "bam_bwa":
+            lines, c = build_bwa_alignment(sim, spec)
+            sam = out / f"samples/{sample}.sam"
+            sam.write_text(header + PG_BWA_T0 + "".join(lines))
+            bam = out / f"samples/{sample}.bam"
+            run(["samtools", "sort", "-o", str(bam), str(sam)])
+            sam.unlink()
+            sheet.append(f"{sample},{bam},,,,")
+            raw = c["unmapped"] + c["low"]
+            e.update(kind="bam", library_primary_records=c["primary"], extracted_unmapped_records=c["unmapped"],
+                     reads_raw=raw, reads_after_hg38=raw - c["low_host"], reads_after_t2t_phix=raw - c["low_host"],
+                     reads_host_depleted=c["microbial"],
+                     low_as_mode="on", low_as_mode_reason="auto_bwa_mem_T_below_30", upstream_aligner="bwa",
+                     low_as_reads_extracted=c["low"], low_as_no_as_records=c["no_as"],
+                     low_as_reads_after_depletion=c["low_microbial"], low_as_reads_classified=c["low_microbial"])
+            for key, n in spec["mic_pairs"].items():
+                taxa[taxon_of_key(key)] = taxa.get(taxon_of_key(key), 0) + 2 * n
+            for key, n in spec["mic_singles"].items():
+                taxa[taxon_of_key(key)] = taxa.get(taxon_of_key(key), 0) + n
+            for key, n in spec["low_pairs"].items():
+                taxa[taxon_of_key(key)] = taxa.get(taxon_of_key(key), 0) + 2 * n
+            taxa[spec["low_half_pair_taxon"]] = taxa.get(spec["low_half_pair_taxon"], 0) + 2
+            taxa[spec["low_single_taxon"]] = taxa.get(spec["low_single_taxon"], 0) + 1
+        elif spec["kind"] in ("bam", "cram"):
             lines, c = build_alignment(sim, spec, host, sample)
             sam = out / f"samples/{sample}.sam"
             sam.write_text(header + "".join(lines))
@@ -284,6 +385,8 @@ def main():
             else:
                 sheet.append(f"{sample},{bam},,,,")
             sam.unlink()
+            e.update(low_as_mode="off", low_as_mode_reason="auto_no_pg", upstream_aligner="NA",
+                     low_as_reads_extracted=0, low_as_reads_after_depletion=0, low_as_reads_classified=0)
             e.update(library_primary_records=c["primary"], extracted_unmapped_records=c["unmapped"],
                      reads_raw=c["unmapped"],
                      reads_after_hg38=c["unmapped"] - c["host_a_unmapped"],

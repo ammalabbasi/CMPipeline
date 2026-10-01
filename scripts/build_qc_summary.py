@@ -33,6 +33,18 @@ COLUMNS = [
     # reads_raw below is the UNMAPPED subset the pipeline extracted, not the library; these
     # columns carry the library itself. NA for FASTQ input, where reads_raw is the library.
     "library_primary_records", "extracted_unmapped_records", "pct_library_unmapped",
+    # low-score mapped rescue, BAM/CRAM only (--extract_low_score_mapped; Ludmil 1 Oct, L8). The
+    # upstream aligner, version and bwa -T come from @PG; low_as_mode is on/off and
+    # low_as_mode_reason why (scripts/low_score_rescue.py REASONS). low_as_reads_extracted are
+    # primary MAPPED records with AS < 30 added to the FLAG 4 reads (so reads_raw = FLAG 4 +
+    # rescued); then how many of them survive host depletion and how many KrakenUniq classified.
+    # low_as_share_of_bracken = low_as_reads_classified / bracken_microbial_reads, in percent: an
+    # estimate of the rescued share of the table Bracken re-estimates from (Bracken itself does not
+    # attribute reads). NA for FASTQ input; the read counts are 0 when the rescue was off
+    # (low_as_no_as_records is NA then: records without AS are counted only when it is on).
+    "upstream_aligner", "upstream_aligner_version", "upstream_bwa_min_score",
+    "low_as_mode", "low_as_mode_reason", "low_as_reads_extracted", "low_as_no_as_records",
+    "low_as_reads_after_depletion", "low_as_reads_classified", "low_as_share_of_bracken",
     # input and filtering (fastp)
     "reads_raw", "bases_raw", "q30_rate_raw",
     "reads_after_fastp", "q30_rate_filtered", "duplication_rate",
@@ -116,7 +128,37 @@ def parse_extract_counts(path: Path) -> dict:
     return {
         "library_primary_records": record.get("library_primary_records") or NA,
         "extracted_unmapped_records": record.get("extracted_unmapped_records") or NA,
+        # Absent from extract_counts.tsv written before the low-score rescue existed: NA.
+        "low_as_reads_extracted": record.get("low_as_reads_extracted") or NA,
+        "low_as_no_as_records": record.get("low_as_no_as_records") or NA,
     }
+
+
+LOW_AS_MODES = {"on", "off"}
+UPSTREAM_FIELDS = ("upstream_aligner", "upstream_aligner_version", "upstream_bwa_min_score",
+                   "low_as_mode", "low_as_mode_reason")
+
+
+def parse_upstream_aligner(path: Path) -> dict:
+    """<sample>.upstream_aligner.tsv from extractReads (scripts/low_score_rescue.py decide)."""
+    with path.open() as handle:
+        records = list(csv.DictReader(handle, delimiter="\t"))
+    if len(records) != 1:
+        raise ValueError(f"{path.name}: expected one row, got {len(records)}")
+    record = records[0]
+    if record.get("low_as_mode") not in LOW_AS_MODES:
+        raise ValueError(f"{path.name}: low_as_mode must be on or off, got {record.get('low_as_mode')!r}")
+    return {field: record.get(field) or NA for field in UPSTREAM_FIELDS}
+
+
+def parse_low_as_survival(path: Path) -> dict:
+    with path.open() as handle:
+        records = list(csv.DictReader(handle, delimiter="\t"))
+    if len(records) != 1:
+        raise ValueError(f"{path.name}: expected one row, got {len(records)}")
+    record = records[0]
+    return {field: record.get(field) or NA
+            for field in ("low_as_reads_after_depletion", "low_as_reads_classified")}
 
 
 def parse_depletion(path: Path) -> dict:
@@ -256,6 +298,23 @@ def sample_status(row: dict) -> str:
     return NA
 
 
+def check_low_as(row: dict) -> None:
+    """The rescued counts can only shrink stage by stage, and are 0 when the rescue was off."""
+    def number(key):
+        value = row.get(key)
+        return None if value in (None, "", NA) else int(float(value))
+    extracted = number("low_as_reads_extracted")
+    if row.get("low_as_mode") == "off" and extracted not in (None, 0):
+        raise ValueError(f"{row['sample']}: low_as_mode off but low_as_reads_extracted = {extracted}")
+    chain = [("low_as_reads_extracted", extracted),
+             ("low_as_reads_after_depletion", number("low_as_reads_after_depletion")),
+             ("low_as_reads_classified", number("low_as_reads_classified"))]
+    known = [(k, v) for k, v in chain if v is not None]
+    for (k1, v1), (k2, v2) in zip(known, known[1:]):
+        if v2 > v1:
+            raise ValueError(f"{row['sample']}: {k2} ({v2}) exceeds {k1} ({v1})")
+
+
 # --------------------------------------------------------------------------- build
 
 
@@ -274,6 +333,12 @@ def build(inputs: Path, min_reads: int) -> list[dict]:
 
     for path in sorted(inputs.rglob("*.extract_counts.tsv")):
         row_for(sample_of(path, ".extract_counts.tsv")).update(parse_extract_counts(path))
+
+    for path in sorted(inputs.rglob("*.upstream_aligner.tsv")):
+        row_for(sample_of(path, ".upstream_aligner.tsv")).update(parse_upstream_aligner(path))
+
+    for path in sorted(inputs.rglob("*.low_as_survival.tsv")):
+        row_for(sample_of(path, ".low_as_survival.tsv")).update(parse_low_as_survival(path))
 
     for path in sorted(inputs.rglob("*.depletion_counts.tsv")):
         row_for(sample_of(path, ".depletion_counts.tsv")).update(parse_depletion(path))
@@ -381,6 +446,14 @@ def build(inputs: Path, min_reads: int) -> list[dict]:
                                           row.get("library_primary_records"))
         row["pct_retained_of_library"] = pct(row.get("reads_host_depleted"),
                                              row.get("library_primary_records"))
+        check_low_as(row)
+        if row.get("low_as_mode") == "off":
+            # Nothing was rescued, so nothing can survive: 0, not unknown (audit C13).
+            for column in ("low_as_reads_after_depletion", "low_as_reads_classified"):
+                if row.get(column) in (None, NA) and row.get("low_as_reads_extracted") == "0":
+                    row[column] = 0
+        row["low_as_share_of_bracken"] = pct(row.get("low_as_reads_classified"),
+                                             row.get("bracken_microbial_reads"))
 
     return [rows[s] for s in sorted(rows)]
 

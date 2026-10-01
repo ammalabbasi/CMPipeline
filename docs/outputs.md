@@ -5,7 +5,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 
 | Directory | Contents |
 |---|---|
-| `UNMAPPED_BAM` | `<sample>.reads_after_filtering.txt`, `<sample>.extract_counts.tsv` (BAM/CRAM) and the fastp JSON/HTML reports; the extracted and filtered FASTQ only with `--save_intermediates true` |
+| `UNMAPPED_BAM` | `<sample>.reads_after_filtering.txt`, `<sample>.extract_counts.tsv` and `<sample>.upstream_aligner.tsv` (BAM/CRAM) and the fastp JSON/HTML reports; the extracted and filtered FASTQ, and `<sample>.low_as_read_ids.txt.gz` (rescued read names), only with `--save_intermediates true` |
 | `FASTQC` | per-stage FastQC reports (raw, filtered, post-GRCh38, post-T2T, post-pangenome) |
 | `MAPPED_READS` | `<sample>.host_depleted.fastq.gz` and `<sample>.depletion_counts.tsv`; `.hg38.fastq.gz` and `.hg38.t2t.fastq.gz` only with `--save_intermediates true` |
 | `BRACKEN` | KrakenUniq reports, Bracken genus/species tables, merged tables |
@@ -14,7 +14,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 | `HUMANN3` | gene families, pathway abundance and coverage, plus `merged/` |
 | `04_DECONTAMINATION`, `05_BATCH_CORRECTION`, `06_VALIDATION` | optional stages; see their sections |
 | `MULTIQC` | `multiqc_report.html` over fastp JSON and all five FastQC passes |
-| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 38 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 48 columns) and `cmp_cohort_report.html` |
 
 Each directory can be moved on its own with the matching parameter: `--unmapped_bam_dir`,
 `--fastqc_dir`, `--mapped_reads_dir`, `--krakenuniq_bracken_dir`, `--metaphlan4_dir`,
@@ -54,6 +54,29 @@ BAM/CRAM (all `NA` for FASTQ):
 | `extracted_unmapped_records` | how many of them were unmapped and extracted; `pct_library_unmapped` is this as a percentage of the library |
 | `pct_retained_of_library` | host-depleted reads as a percentage of the whole library |
 
+**Low-score mapped rescue (BAM/CRAM, `--extract_low_score_mapped`).** Ten columns record, per
+sample, what the upstream aligner was and whether reads it reported as mapped with a low score were
+also extracted (see [running/classification.md](running/classification.md#low-score-mapped-reads-tcga-gdc-bams)).
+All `NA` for FASTQ input.
+
+| Column | Meaning |
+|---|---|
+| `upstream_aligner`, `upstream_aligner_version` | the aligner's `@PG` PN and VN (bwa mem's own record when present); the command line is never recorded |
+| `upstream_bwa_min_score` | the `-T` in the `bwa mem` command line: a number, `default` (not given, i.e. 30), `unparsed`; `NA` without bwa mem |
+| `low_as_mode` | `on` or `off` for this sample |
+| `low_as_mode_reason` | why: `auto_bwa_mem_T_below_30` (on), `auto_bwa_mem_T_default`, `auto_bwa_mem_T_30_or_more`, `auto_bwa_mem_T_unparsed`, `auto_bwa_not_mem`, `auto_other_aligner`, `auto_no_pg`, `auto_unknown_aligner` (all off), `requested_on`, `requested_off` |
+| `low_as_reads_extracted` | primary mapped records with AS < 30 extracted in addition to the FLAG 4 reads (`0` when off) |
+| `low_as_no_as_records` | primary mapped records without an AS tag (never extracted; counted only when the rescue is on, `NA` otherwise) |
+| `low_as_reads_after_depletion` | rescued reads still present in the host-depleted FASTQ |
+| `low_as_reads_classified` | rescued reads KrakenUniq classified |
+| `low_as_share_of_bracken` | `low_as_reads_classified` as a percentage of `bracken_microbial_reads` (KrakenUniq classified reads, the input Bracken re-estimates from). Bracken does not attribute individual reads, so this is the rescued share of its input, not of each taxon |
+
+With the rescue on, `extracted_unmapped_records` keeps its meaning (FLAG 4 only) and
+`reads_raw` (the reads entering fastp) is `extracted_unmapped_records + low_as_reads_extracted`.
+The per-sample survival rows are also written to `QC_SUMMARY/low_as_survival/<sample>.low_as_survival.tsv`,
+and `RUN_REPORT.txt` gets a counts-only *LOW-SCORE RESCUE* section (inputs per mode and reason, upstream
+aligners, rescued reads summed per stage).
+
 `pct_retained_overall` is host-depleted reads as a percentage of the reads **entering fastp**:
 the library for FASTQ, but only the extracted unmapped subset for BAM/CRAM. Compare samples of
 different input types with `pct_retained_of_library`, not `pct_retained_overall`.
@@ -76,7 +99,7 @@ Every run produces, unless switched off:
 
 - **`RESULTS/MULTIQC/multiqc_report.html`** — fastp JSON plus all five FastQC passes
   (raw, filtered, post-GRCh38, post-T2T, post-pangenome). Disable with `--skip_multiqc true`.
-- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 38 columns (see *Outputs*).
+- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 48 columns (see *Outputs*).
 - **`RESULTS/QC_SUMMARY/cmp_cohort_report.html`** — a self-contained page (no network, no
   CDN) with the retention chart and the tables. Disable with `--skip_cohort_report true`.
 - **`pipeline_info/RUN_REPORT.txt`** and the provenance record — see *Outputs*.

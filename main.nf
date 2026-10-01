@@ -126,6 +126,12 @@ params.consensus_min_reads = 100000  // Per-sample minimum KrakenUniq root (clas
 params.sample = "${projectDir}/samples.csv"
 params.input_data_type = "auto"  // auto | bam | cram | fastq
 params.cram_reference = null      // optional matching FASTA for CRAM decoding
+// BAM/CRAM only (Ludmil 1 Oct, L8; ported from pksProfiler E1). Also extract PRIMARY mapped records
+// with AS:i < 30 -- the reads a default `bwa mem` (-T 30) would have left unmapped. GDC aligned TCGA
+// with `bwa mem -T 0`, so FLAG 4 extraction alone misses microbial reads with a chance short human hit.
+// auto = on only when the input's @PG runs bwa mem / bwa-mem2 mem with -T < 30; off for STAR, minimap2,
+// bwa aln, bwa mem at the default -T, or no @PG. Decided and recorded per sample (QC summary).
+params.extract_low_score_mapped = "auto"   // auto | on | off
 
 // Output directories. Everything publishes under --outdir, which defaults to RESULTS/ in
 // the directory the run was launched from, next to that run's work/ and pipeline_info/.
@@ -248,6 +254,7 @@ include { multiqc } from './Modules/multiqc.nf'
 include { qcSummary } from './Modules/qc_summary.nf'
 include { cohortReport } from './Modules/cohort_report.nf'
 include { mapReads } from './Modules/map_reads.nf'
+include { lowAsSurvival } from './Modules/low_as_survival.nf'
 // Taxonomic classification modules
 include { Bracken } from './Modules/Bracken.nf'
 include { metaphlan4 } from './Modules/metaphlan4.nf'
@@ -377,6 +384,11 @@ workflow {
     def adapterTrimMode = params.adapter_trim.toString().toLowerCase()
     if (!(adapterTrimMode in ['auto', 'always', 'never'])) {
         error "Invalid --adapter_trim '${params.adapter_trim}'; expected auto, always or never"
+    }
+    // A bare `--extract_low_score_mapped` arrives as Boolean true; only the three words are accepted.
+    if (!(params.extract_low_score_mapped instanceof CharSequence) ||
+        !(params.extract_low_score_mapped.toString() in ['auto', 'on', 'off'])) {
+        error "--extract_low_score_mapped must be auto, on or off (got '${params.extract_low_score_mapped}')"
     }
 
     if (params.start_from == 'beginning' && !skipHostDepletion) {
@@ -690,6 +702,9 @@ workflow {
 
     if (params.start_from == 'beginning') {
         // Full pipeline from BAM files
+        // (sampleID, rescued read names, host-depleted FASTQ) for BAM/CRAM samples whose low-score
+        // rescue was on; joined with KrakenUniq's classified FASTA below (lowAsSurvival).
+        def LOW_AS_DEPLETED = null
 
         // ------------------- STEP1: HOST DEPLETION ---------------------- //
 
@@ -768,9 +783,10 @@ workflow {
             }.set { INPUTS_BY_TYPE }
 
             extractReads(INPUTS_BY_TYPE.alignment.map { sampleID, inputType, inputs, references -> tuple(sampleID, inputType, inputs[0], references) },
-                         depsOf(["${params.scripts}/validate_cram_reference.py"], [params.cram_reference]))
+                         depsOf(["${params.scripts}/validate_cram_reference.py", "${params.scripts}/low_score_rescue.py"], [params.cram_reference]))
             extractReads.out.reads.set { EXTRACTED_READS }
             qcParts << extractReads.out.counts   // *.extract_counts.tsv: BAM/CRAM library denominator (C07)
+            qcParts << extractReads.out.aligner  // *.upstream_aligner.tsv: @PG aligner/-T and low-AS mode (L8)
             // `pretrimmed` marks reads that came out of an aligned BAM/CRAM: whoever
             // produced the alignment adapter-trimmed them before aligning.
             INPUTS_BY_TYPE.fastq
@@ -835,6 +851,7 @@ workflow {
             FASTQCT2T(MAPPED_READS_MULTI.T2T)
             FASTQCPANGENOME(MAPPED_READS_MULTI.PAN)
             MAPPED_READS_MULTI.PAN.set { CLASSIFICATION_READS }
+            LOW_AS_DEPLETED = extractReads.out.low_as_ids.join(MAPPED_READS_MULTI.PAN)
 
             // Cohort QC report. fastp's per-sample JSON carries reads in/out, duplication
             // and adapter stats; the five FastQC passes cover raw, filtered, and each
@@ -910,6 +927,11 @@ workflow {
             qcParts << BRACKEN_OUT.map { it[1] }          // *.krakenuniq.report.txt
             qcParts << BRACKEN_OUT.flatMap { it[4] }      // *.bracken.{G,S}.report.txt
 
+            // Low-score rescue survival: how many rescued reads KrakenUniq classified (L8).
+            if (LOW_AS_DEPLETED != null) {
+                LOW_AS_DEPLETED = LOW_AS_DEPLETED.join(BRACKEN_OUT.map { it -> tuple(it[0], it[2]) })
+            }
+
             // METAPHLAN4: only samples passing the per-sample Bracken read gate
             // Only samples that cleared --consensus_min_reads emit this channel at all,
             // so no filtering is needed: absence is the gate.
@@ -968,6 +990,17 @@ workflow {
             }
         } else {
             log.info "Skipping taxonomic classification step"
+        }
+
+        // Per-stage survival of the low-score rescued reads (--extract_low_score_mapped, L8):
+        // only samples whose rescue was on reach here. Without classification the classified
+        // FASTA is an empty list and low_as_reads_classified reads NA.
+        if (LOW_AS_DEPLETED != null) {
+            def survivalInput = skipClassification ?
+                LOW_AS_DEPLETED.map { id, ids, depleted -> tuple(id, ids, depleted, []) } :
+                LOW_AS_DEPLETED
+            lowAsSurvival(survivalInput, depsOf(["${params.scripts}/low_score_rescue.py"]))
+            qcParts << lowAsSurvival.out.counts   // *.low_as_survival.tsv
         }
 
         // -------------------  STEP3: CONSENSUS TAXA ---------------------- //

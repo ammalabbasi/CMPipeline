@@ -87,6 +87,8 @@ class RunRecord {
         // Upstream stages do not run for --start_from decontam / batch_correction.
         def fromStart = params.start_from == 'beginning'
         if (fromStart && !flags.skip_host_depletion) requested << 'host_depletion'
+        // BAM/CRAM low-score rescue request (L8); what each sample got is in the QC summary.
+        if (fromStart && !flags.skip_host_depletion) requested << "extract_low_score_mapped:${params.extract_low_score_mapped}".toString()
         if (fromStart && !flags.skip_classification) requested << 'classification'
         if (fromStart && !flags.skip_consensus)      requested << 'consensus'
         if (fromStart && !flags.skip_classification && !flags.skip_humann3) requested << 'humann3'

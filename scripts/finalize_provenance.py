@@ -22,6 +22,7 @@ Ported from pksProfiler (F16). Standard library only.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import re
@@ -346,6 +347,51 @@ def output_checksums(params: dict) -> dict:
             "total_bytes": sum(entry["bytes"] for entry in files)}
 
 
+# ------------------------------------------------------------- low-score rescue (L8)
+
+LOW_AS_COUNTS = ("low_as_reads_extracted", "low_as_reads_after_depletion", "low_as_reads_classified")
+
+
+def low_score_rescue_summary(params: dict) -> dict | None:
+    """Cohort view of --extract_low_score_mapped from the QC summary: how many BAM/CRAM inputs had
+    the rescue on and why, which upstream aligners, and the rescued reads summed per stage.
+
+    Counts only -- no sample ID, path or read enters the record (per-sample values stay in
+    cmp.qc.summary.tsv on the cluster). None when there is no QC summary or no BAM/CRAM row.
+    """
+    root = params.get("qc_summary_dir")
+    if not root or root in {"null", "None"}:
+        return None
+    path = Path(root) / "cmp.qc.summary.tsv"
+    if not path.is_file():
+        return None
+    with path.open() as handle:
+        rows = [r for r in csv.DictReader(handle, delimiter="\t") if r.get("low_as_mode") in ("on", "off")]
+    if not rows:
+        return None
+
+    def tally(key):
+        out: dict[str, int] = defaultdict(int)
+        for r in rows:
+            out[key(r)] += 1
+        return dict(sorted(out.items()))
+
+    totals = {}
+    for column in LOW_AS_COUNTS:
+        values = [r.get(column) for r in rows if r.get("low_as_mode") == "on"]
+        numbers = [int(float(v)) for v in values if v not in (None, "", "NA")]
+        totals[column] = sum(numbers) if numbers else None
+        totals[f"{column}_samples"] = len(numbers)
+    return {
+        "inputs": len(rows),
+        "by_mode": tally(lambda r: r["low_as_mode"]),
+        "by_reason": tally(lambda r: r.get("low_as_mode_reason") or "NA"),
+        "by_aligner": tally(lambda r: f"{r.get('upstream_aligner') or 'NA'}:{r.get('upstream_aligner_version') or 'NA'}"
+                                      f" -T {r.get('upstream_bwa_min_score') or 'NA'}"),
+        "rescued_reads_total": totals,
+    }
+
+
 # ------------------------------------------------------------------------- rendering
 
 
@@ -436,6 +482,21 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
                 add("      *** ConQuR RemoteSha differs from --conqur_sha ***")
         add("")
 
+    rescue = (record.get("outputs") or {}).get("low_score_rescue")
+    if rescue:
+        add("LOW-SCORE RESCUE (BAM/CRAM, --extract_low_score_mapped)")
+        add(f"  inputs        {rescue['inputs']}   " +
+            "   ".join(f"{mode} {n}" for mode, n in rescue["by_mode"].items()))
+        for reason, n in rescue["by_reason"].items():
+            add(f"  {n:>6}  {reason}")
+        for aligner, n in rescue["by_aligner"].items():
+            add(f"  {n:>6}  upstream {aligner}")
+        totals = rescue["rescued_reads_total"]
+        for column in LOW_AS_COUNTS:
+            value = totals.get(column)
+            add(f"  {column:<30}{'-' if value is None else value:>14}  ({totals.get(column + '_samples', 0)} samples)")
+        add("")
+
     tables = (record.get("outputs") or {}).get("cohort_tables") or {}
     add("COHORT TABLES (sha256)")
     if tables.get("files"):
@@ -507,6 +568,8 @@ def main() -> int:
         "processes": processes,
         # Digests of the cohort tables as they stand at the end of this launch (C06).
         "cohort_tables": output_checksums(launch_params),
+        # --extract_low_score_mapped, aggregated over the BAM/CRAM inputs (counts only; L8).
+        "low_score_rescue": low_score_rescue_summary(launch_params),
     }
 
     environment = record.setdefault("environment", {})

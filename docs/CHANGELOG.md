@@ -4,6 +4,20 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **BAM/CRAM extraction missed low-score mapped reads in `bwa mem -T 0` alignments (Ludmil 1 Oct,
+  L8; ported from pksProfiler E1).** GDC aligned TCGA with `bwa mem -T 0`, so microbial reads with a
+  chance short human hit were reported mapped (AS < 30) and FLAG 4 extraction never saw them.
+  `--extract_low_score_mapped auto|on|off` (new, default `auto`) also extracts primary mapped records
+  with `AS:i` < 30; `auto` is on only when the input's `@PG` runs `bwa mem`/`bwa-mem2 mem` with
+  `-T` < 30, and off for STAR, minimap2, `bwa aln`, default-`-T` bwa mem and inputs without `@PG`.
+  Secondary/supplementary records and records without `AS` are never added. **Results change for
+  TCGA GDC BAMs** (more reads reach classification); other inputs, and `off`, extract exactly as
+  before. Ten new QC summary columns (48 in all) record the upstream aligner, version and `-T`, the
+  mode and why, and the rescued reads extracted / after host depletion / classified; a new
+  `lowAsSurvival` task counts the last two by read name. `RUN_REPORT.txt` gains a counts-only
+  *LOW-SCORE RESCUE* section. Per-taxon attribution through Bracken is not measured (see
+  docs/running/classification.md).
+
 - **Alignment validation judged spread on reads shared with relatives (audit 2026-09-30, V01/V02).**
   The bins test counted every supporting read, including reads tied with another species. For a
   species present at low abundance next to an abundant relative, those shared reads pile into the
@@ -58,7 +72,7 @@ and rejected outright if it is not a boolean.
   environment.
 
 **Reporting**
-- MultiQC report, a 38-column per-sample QC summary, and a self-contained cohort report.
+- MultiQC report, a per-sample QC summary (then 38 fields), and a self-contained cohort report.
   `mapReads` now records read retention at each depletion stage, and `filterReads` keeps the
   fastp JSON it previously produced and discarded.
 

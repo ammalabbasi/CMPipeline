@@ -17,6 +17,51 @@ without it, with fastp reporting no adapter detected and 0 reads trimmed.
 Skipping the FASTA scan does not disable adapter trimming; fastp still
 auto-detects adapters.
 
+## Low-score mapped reads (TCGA GDC BAMs)
+
+For BAM/CRAM input the pipeline classifies the reads the upstream aligner did not place on the
+human reference. Until now that meant FLAG 4 (unmapped) records only. `bwa mem` reports a read as
+unmapped only when its best local alignment scores below `-T` (default 30). **GDC aligned TCGA with
+`bwa mem -T 0`**, so a microbial read with a chance ~19 bp match to human comes out *mapped* (low
+`AS`, mostly soft-clipped, MAPQ 0-9) and FLAG 4 extraction never sees it. pksProfiler measured the
+effect for pks reads (synthetic): TCGA kept 57-66% of them, `-T 30` 98.5%.
+
+`--extract_low_score_mapped` (default `auto`) also extracts **primary mapped records with
+`AS:i` < 30**, the set a default `bwa mem` would have left unmapped:
+
+- `auto` turns it on only when the input's `@PG` header runs `bwa mem` or `bwa-mem2 mem`
+  (also inside a wrapper such as `sentieon bwa mem`) **with `-T` < 30**. STAR, minimap2, bowtie2,
+  `bwa aln`/`sampe`, `bwa mem` at the default or a higher `-T`, an unreadable `-T`, or no `@PG`
+  leave it off: other aligners' `AS` is not on bwa's scale, and with `-T` >= 30 there is nothing
+  to rescue. The decision is made per sample from the header alone; the command line is read in
+  memory, never written.
+- `on` applies the rule to every BAM/CRAM; `off` restores FLAG 4 only. FASTQ input is unaffected.
+- Secondary (0x100) and supplementary (0x800) records are never extracted; mapped records without
+  an `AS` tag are never extracted (only counted); FLAG 4 records are extracted as before.
+- Rescued reads go through the same `samtools fastq -N`, so names, `/1` `/2` suffixes and
+  reverse-strand orientation are exactly as for unmapped reads. With the rule off the extraction
+  pipeline is unchanged.
+
+What each sample got is recorded in the QC summary (`upstream_aligner`, `upstream_aligner_version`,
+`upstream_bwa_min_score`, `low_as_mode`, `low_as_mode_reason`) along with how many rescued reads
+were extracted, survived host depletion and were classified (`low_as_reads_extracted`,
+`low_as_reads_after_depletion`, `low_as_reads_classified`, `low_as_share_of_bracken`; see
+[outputs](../outputs.md)). Survival is counted by read name: `extractReads` writes the rescued names
+(an intermediate, published only with `--save_intermediates true`) and `lowAsSurvival` looks them up
+in the host-depleted FASTQ and in KrakenUniq's classified FASTA.
+
+**Known limits.** Bracken re-estimates abundances from the KrakenUniq report and does not attribute
+individual reads, so the rescued share of each *taxon* is not measured; `low_as_share_of_bracken`
+is the rescued share of Bracken's input. A rescued read that host depletion renames is not matched:
+minimap2 (`-ax sr`) pairs adjacent records with the same base name and `samtools fastq` then adds
+`/1` `/2`, which leaves `/1` `/2` names unchanged but would rename an unpaired, suffix-less read that
+happens to sit next to a same-named one (an undercount, never an overcount of survivors).
+
+**This changes results for TCGA GDC BAMs** (and any `bwa mem -T` < 30 input): more reads are
+classified. Whether the recovery is the same for every taxon, and whether it adds as much to blood
+normals as to tumours, is being tested before cohort numbers are compared (test plan,
+2026-10-01). To reproduce an older run exactly, pass `--extract_low_score_mapped off`.
+
 ## Samples with no reads
 
 A sample that has no reads left after filtering is logged and dropped; the rest
