@@ -351,6 +351,8 @@ class AutoDecision(unittest.TestCase):
                  (PG_ALN,): ("auto_bwa_not_mem", "bwa", "0.7.12"),
                  (PG_NO_CL,): ("auto_bwa_not_mem", "bwa", "0.7.17"),
                  (): ("auto_no_pg", "NA", "NA"),
+                 (PG_SAMTOOLS,): ("auto_no_aligner_pg", "NA", "NA"),
+                 ("@PG\tID:MarkDuplicates\tPN:MarkDuplicates\tVN:2.27", PG_SAMTOOLS): ("auto_no_aligner_pg", "NA", "NA"),
                  (PG_UNKNOWN,): ("auto_unknown_aligner", "mytool", "1")}
         for pg, (reason, aligner, version) in cases.items():
             with self.subTest(pg=pg):
@@ -378,6 +380,7 @@ class AutoDecision(unittest.TestCase):
                          "auto_bwa_mem_T_unparsed")
 
     def test_command_line_is_never_recorded(self):
+        self.assertEqual(self.decide(PG_STAR, PG_SAMTOOLS)["upstream_aligner"], "STAR")
         for pg in (PG_GDC, PG_BWA_DEFAULT, PG_STAR):
             row = self.decide(pg, PG_SAMTOOLS)
             self.assertNotIn("SECRET", "".join(map(str, row.values())))

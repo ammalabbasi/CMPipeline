@@ -344,8 +344,9 @@ def main():
     for sample, spec in SAMPLES.items():
         e = {"kind": spec["kind"]}
         taxa = {}
-        # --extract_low_score_mapped columns (L8): NA for FASTQ; off (no @PG -> auto_no_pg) for the
-        # plain BAM/CRAM fixtures, whose extraction must be exactly what it was before the rescue.
+        # --extract_low_score_mapped columns (L8): NA for FASTQ; off for the plain BAM/CRAM fixtures,
+        # whose only @PG is the one `samtools sort` writes (auto_no_aligner_pg) and whose extraction
+        # must be exactly what it was before the rescue.
         e.update(low_as_mode="NA", low_as_mode_reason="NA", upstream_aligner="NA",
                  low_as_reads_extracted="NA", low_as_reads_after_depletion="NA", low_as_reads_classified="NA")
         if spec["kind"] == "bam_bwa":
@@ -385,7 +386,7 @@ def main():
             else:
                 sheet.append(f"{sample},{bam},,,,")
             sam.unlink()
-            e.update(low_as_mode="off", low_as_mode_reason="auto_no_pg", upstream_aligner="NA",
+            e.update(low_as_mode="off", low_as_mode_reason="auto_no_aligner_pg", upstream_aligner="NA",
                      low_as_reads_extracted=0, low_as_reads_after_depletion=0, low_as_reads_classified=0)
             e.update(library_primary_records=c["primary"], extracted_unmapped_records=c["unmapped"],
                      reads_raw=c["unmapped"],

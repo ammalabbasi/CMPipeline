@@ -47,6 +47,7 @@ REASONS = {
     "auto_bwa_not_mem": "off",            # a bwa @PG that is not `bwa mem` (aln/samse/sampe, no CL)
     "auto_other_aligner": "off",          # STAR, minimap2, bowtie2, ...: AS is not on bwa's scale
     "auto_no_pg": "off",                  # no @PG at all
+    "auto_no_aligner_pg": "off",          # only post-processing @PG (samtools sort, Picard, ...)
     "auto_unknown_aligner": "off",        # @PG present, no recognisable aligner
     "requested_on": "on",
     "requested_off": "off",
@@ -59,6 +60,9 @@ BWA_PROGRAMS = ("bwa", "bwa-mem2")
 KNOWN_ALIGNERS = ("bwa", "bwa-mem2", "star", "minimap2", "bowtie2", "bowtie", "hisat2",
                   "novoalign", "dragen", "isaac", "tmap", "gsnap", "subread", "bismark",
                   "blasr", "pbmm2", "ngmlr", "segemehl", "smalt", "mosaik")
+# Post-processing tools that write @PG but align nothing: never reported as the upstream aligner.
+UTILITIES = ("samtools", "picard", "markduplicates", "gatk", "sambamba", "biobambam2", "bamsormadup",
+             "bammarkduplicates", "fgbio", "bedtools", "bamtools", "sentieon-util", "umi_tools")
 NA = "NA"
 
 
@@ -128,11 +132,14 @@ def decide(header_text: str, request: str = "auto", sample: str = "") -> dict:
     else:
         min_score = NA
         known = [pg for pg in pgs if _label(pg) in KNOWN_ALIGNERS]
-        roots = [pg for pg in pgs if "PP" not in pg]
-        aligner_pg = known[0] if known else (roots[0] if roots else (pgs[0] if pgs else None))
+        tools = [pg for pg in pgs if _label(pg) not in UTILITIES]
+        roots = [pg for pg in tools if "PP" not in pg]
+        aligner_pg = known[0] if known else (roots[0] if roots else (tools[0] if tools else None))
         name = (aligner_pg.get("PN") or aligner_pg.get("ID")) if aligner_pg else None
         if not pgs:
             reason = "auto_no_pg"
+        elif not tools:
+            reason = "auto_no_aligner_pg"
         elif any(_label(pg) in BWA_PROGRAMS for pg in pgs):
             reason = "auto_bwa_not_mem"
         elif known:

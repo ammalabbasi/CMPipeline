@@ -31,7 +31,7 @@ effect for pks reads (synthetic): TCGA kept 57-66% of them, `-T 30` 98.5%.
 
 - `auto` turns it on only when the input's `@PG` header runs `bwa mem` or `bwa-mem2 mem`
   (also inside a wrapper such as `sentieon bwa mem`) **with `-T` < 30**. STAR, minimap2, bowtie2,
-  `bwa aln`/`sampe`, `bwa mem` at the default or a higher `-T`, an unreadable `-T`, or no `@PG`
+  `bwa aln`/`sampe`, `bwa mem` at the default or a higher `-T`, an unreadable `-T`, no `@PG`, or only post-processing `@PG` (samtools, Picard)
   leave it off: other aligners' `AS` is not on bwa's scale, and with `-T` >= 30 there is nothing
   to rescue. The decision is made per sample from the header alone; the command line is read in
   memory, never written.

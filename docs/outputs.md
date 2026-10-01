@@ -61,10 +61,10 @@ All `NA` for FASTQ input.
 
 | Column | Meaning |
 |---|---|
-| `upstream_aligner`, `upstream_aligner_version` | the aligner's `@PG` PN and VN (bwa mem's own record when present); the command line is never recorded |
+| `upstream_aligner`, `upstream_aligner_version` | the aligner's `@PG` PN and VN (bwa mem's own record when present; post-processing tools such as samtools or Picard are never reported); the command line is never recorded |
 | `upstream_bwa_min_score` | the `-T` in the `bwa mem` command line: a number, `default` (not given, i.e. 30), `unparsed`; `NA` without bwa mem |
 | `low_as_mode` | `on` or `off` for this sample |
-| `low_as_mode_reason` | why: `auto_bwa_mem_T_below_30` (on), `auto_bwa_mem_T_default`, `auto_bwa_mem_T_30_or_more`, `auto_bwa_mem_T_unparsed`, `auto_bwa_not_mem`, `auto_other_aligner`, `auto_no_pg`, `auto_unknown_aligner` (all off), `requested_on`, `requested_off` |
+| `low_as_mode_reason` | why: `auto_bwa_mem_T_below_30` (on), `auto_bwa_mem_T_default`, `auto_bwa_mem_T_30_or_more`, `auto_bwa_mem_T_unparsed`, `auto_bwa_not_mem`, `auto_other_aligner`, `auto_no_pg`, `auto_no_aligner_pg` (only samtools/Picard-style post-processing @PG), `auto_unknown_aligner` (all off), `requested_on`, `requested_off` |
 | `low_as_reads_extracted` | primary mapped records with AS < 30 extracted in addition to the FLAG 4 reads (`0` when off) |
 | `low_as_no_as_records` | primary mapped records without an AS tag (never extracted; counted only when the rescue is on, `NA` otherwise) |
 | `low_as_reads_after_depletion` | rescued reads still present in the host-depleted FASTQ |
