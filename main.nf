@@ -1069,8 +1069,14 @@ workflow {
                 buildValidationRef(validationSpeciesList.out.species)
                 buildValidationRef.out.ref.first().set { VALIDATION_REF }
             }
+            // Batches are cut from the samples SORTED by ID, not in arrival order (audit X11, confirmed twice
+            // on CRC50 2026-10-02/05): arrival order differs between runs, so the same samples formed different
+            // batches, every alignForValidation cache key changed and -resume re-aligned the whole cohort.
+            // Validation waits for the whole cohort anyway (its reference is built from the consensus table).
+            def validationBatchSize = params.validation_batch_size.toString().toInteger()
             CLASSIFICATION_READS
-                .collate(params.validation_batch_size.toString().toInteger())
+                .toSortedList { a, b -> a[0].toString() <=> b[0].toString() }
+                .flatMap { all -> all.collate(validationBatchSize) }
                 .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
                 .set { VALIDATION_BATCHES }
             alignForValidation(VALIDATION_BATCHES, VALIDATION_REF,
