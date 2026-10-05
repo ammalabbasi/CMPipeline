@@ -453,6 +453,11 @@ contaminants_by_batch <- do.call(rbind, lapply(eligible_batches, function(batch_
   batch_roles <- validated_roles[selected_batches == batch_id]
   batch_counts <- filtered_counts[evaluated_taxa, batch_samples, drop = FALSE]
   taxon_present <- rowSums(batch_counts) > 0
+  # decontam/phyloseq see internal IDs, never the taxon labels: a label with quotes
+  # (s__Clostridium_sp._'deep_sea') came back with the quotes stripped and failed the set check
+  # (CRC50 Test 3, 2026-10-05). Results are mapped back to the labels by position below.
+  internal_ids <- sprintf("taxon_%06d", seq_along(evaluated_taxa))
+  rownames(batch_counts) <- internal_ids
   otu <- phyloseq::otu_table(batch_counts, taxa_are_rows = TRUE)
   sample_frame <- data.frame(
     is.neg = batch_roles == "control",
@@ -479,10 +484,10 @@ contaminants_by_batch <- do.call(rbind, lapply(eligible_batches, function(batch_
     error = function(e) stopf("decontam failed for batch '%s': %s", batch_id, conditionMessage(e))
   )
   result_taxa <- rownames(result)
-  if (!setequal(result_taxa, evaluated_taxa)) {
+  if (!setequal(result_taxa, internal_ids)) {
     # Name the difference (taxon labels only, no counts) so the cause can be diagnosed from the log.
-    missing <- setdiff(evaluated_taxa, result_taxa)
-    extra <- setdiff(result_taxa, evaluated_taxa)
+    missing <- evaluated_taxa[match(setdiff(internal_ids, result_taxa), internal_ids)]
+    extra <- setdiff(result_taxa, internal_ids)
     stopf(paste0("decontam returned a different taxon set for batch '%s': %d evaluated, %d returned; ",
                  "missing from result (%d): %s; unexpected in result (%d): %s; ",
                  "all-zero in this batch among the missing: %d; zero-total samples in batch: %d"),
@@ -491,7 +496,7 @@ contaminants_by_batch <- do.call(rbind, lapply(eligible_batches, function(batch_
           length(extra), collapse_values(head(extra, 15)),
           sum(missing %in% evaluated_taxa[!taxon_present]), sum(colSums(batch_counts) == 0))
   }
-  result <- result[match(evaluated_taxa, result_taxa), , drop = FALSE]
+  result <- result[match(internal_ids, result_taxa), , drop = FALSE]
   raw_p <- if ("p" %in% names(result)) as.numeric(result$p) else rep(NA_real_, length(evaluated_taxa))
   raw_p_prev <- if ("p.prev" %in% names(result)) as.numeric(result$p.prev) else rep(NA_real_, length(evaluated_taxa))
   raw_contaminant <- as.logical(result$contaminant)

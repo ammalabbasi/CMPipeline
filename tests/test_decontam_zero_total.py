@@ -100,6 +100,19 @@ class ZeroTotalBehaviour(unittest.TestCase):
         cmd = [c for c in cmd if c != "--no_lib"]
         return subprocess.run(cmd, cwd=self.dir, capture_output=True, text=True)
 
+    def test_taxon_label_with_quotes_survives_decontam(self):
+        """CRC50 Test 3 (2026-10-05): phyloseq/decontam returned s__Clostridium_sp._'deep_sea' without its
+        quotes and the taxon-set check stopped the run. Batch 2 has no zero sample, so it goes through
+        decontam::isContaminant on a phyloseq object."""
+        label = "g__G0_sp._'deep_sea'"
+        text = open(f"{self.dir}/otu.tsv").read().replace("g__G0\t", label + "\t")
+        with open(f"{self.dir}/otu.tsv", "w") as f:
+            f.write(text)
+        r = self.run_r()
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        rows = [l.rstrip("\n").split("\t") for l in open(f"{self.dir}/t.contaminants_by_batch.tsv")]
+        self.assertIn(label, {row[0] for row in rows[1:]})
+
     def test_keep_retains_zero_controls(self):
         r = self.run_r()
         self.assertEqual(r.returncode, 0, r.stderr[-500:])
