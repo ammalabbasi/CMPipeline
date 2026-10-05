@@ -480,7 +480,16 @@ contaminants_by_batch <- do.call(rbind, lapply(eligible_batches, function(batch_
   )
   result_taxa <- rownames(result)
   if (!setequal(result_taxa, evaluated_taxa)) {
-    stopf("decontam returned a different taxon set for batch '%s'", batch_id)
+    # Name the difference (taxon labels only, no counts) so the cause can be diagnosed from the log.
+    missing <- setdiff(evaluated_taxa, result_taxa)
+    extra <- setdiff(result_taxa, evaluated_taxa)
+    stopf(paste0("decontam returned a different taxon set for batch '%s': %d evaluated, %d returned; ",
+                 "missing from result (%d): %s; unexpected in result (%d): %s; ",
+                 "all-zero in this batch among the missing: %d; zero-total samples in batch: %d"),
+          batch_id, length(evaluated_taxa), length(result_taxa),
+          length(missing), collapse_values(head(missing, 15)),
+          length(extra), collapse_values(head(extra, 15)),
+          sum(missing %in% evaluated_taxa[!taxon_present]), sum(colSums(batch_counts) == 0))
   }
   result <- result[match(evaluated_taxa, result_taxa), , drop = FALSE]
   raw_p <- if ("p" %in% names(result)) as.numeric(result$p) else rep(NA_real_, length(evaluated_taxa))
