@@ -150,3 +150,38 @@ reject_existing_batch_outputs <- function(root) {
                                   "batch_correction_methods.tsv", "batch_correction_run_settings.tsv")))))
     stop("Existing batch outputs: use a fresh output directory; filename-only reuse is not allowed")
 }
+
+# K04 (audit 2026-09-30): Tune_ConQuR scores the uncorrected ("original") table of each prevalence
+# bin with adonis(tab ~ batchid) without the single-batch guard it applies to the corrected
+# candidates. A bin whose nonzero samples all sit in one batch then stops the whole rank with
+# "contrasts can be applied only to factors with 2 or more levels" (CRC50 Test 3 genus, 2026-10-06).
+# This returns Tune_ConQuR with that guard added (NA when one batch is present, as for the
+# candidates) and, when every score in a bin is NA, keeps the original table for that bin, which
+# the methods ledger then records as "original". Each edit must match exactly once, so a ConQuR
+# version with different code stops here rather than running unpatched. A GPL-3 modification at run
+# time; the packaged ConQuR is unchanged (conda_envs/local_channel/NOTICE.md).
+guarded_tune_conqur <- function(f = ConQuR::Tune_ConQuR) {
+  # ConQuR assigns with "=", which quote() would read as an argument name, hence str2lang.
+  edits <- list(
+    list(from = str2lang("R2[1, 2] = adonis(formula = tab[index, ] ~ batchid[index])$aov.tab[1, 5]"),
+         to = str2lang(paste("R2[1, 2] = if (length(index) != 0 & length(unique(batchid[index])) != 1)",
+                             "adonis(formula = tab[index, ] ~ batchid[index])$aov.tab[1, 5] else NA"))),
+    list(from = str2lang("index_optimal = which.min(as.numeric(R2$batch_R2))"),
+         to = str2lang(paste("index_optimal = if (all(is.na(as.numeric(R2$batch_R2)))) 1L",
+                             "else which.min(as.numeric(R2$batch_R2))"))))
+  hits <- integer(length(edits))
+  walk <- function(x) {
+    for (i in seq_along(edits)) if (identical(x, edits[[i]]$from)) {
+      hits[i] <<- hits[i] + 1L
+      return(edits[[i]]$to)
+    }
+    if (is.call(x)) for (j in seq_along(x)) if (!is.null(x[[j]]) && !identical(x[[j]], quote(expr = ))) x[[j]] <- walk(x[[j]])
+    x
+  }
+  b <- walk(body(f))
+  if (!all(hits == 1L))
+    stop("Cannot apply the K04 Tune_ConQuR guard: expected each edit once, matched ",
+         paste(hits, collapse = "/"), "; check the installed ConQuR against params.conqur_sha")
+  body(f) <- b
+  f
+}

@@ -250,7 +250,8 @@ run_phase <- function(phase_num, tab, meta, batch_col, covars,
   assign("batchid", batchid, envir = .GlobalEnv)
 
   tryCatch({
-    result <- Tune_ConQuR(
+    # K04: Tune_ConQuR with the single-batch guard on its uncorrected benchmark (batch_contract.R).
+    result <- guarded_tune_conqur()(
       tax_tab = tab,
       batchid = batchid,
       covariates = final_covars,

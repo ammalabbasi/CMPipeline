@@ -4,6 +4,16 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Batch correction no longer stops a whole rank when one prevalence bin sits in a single batch
+  (audit K04).** `Tune_ConQuR` scored each bin's uncorrected table with `adonis(tab ~ batch)` without
+  the single-batch guard it uses for corrected tables, so one batch-confined rare taxon failed the rank
+  with "contrasts can be applied only to factors with 2 or more levels" (CRC50 Test 3, genus). The
+  pipeline now calls a guarded copy (`guarded_tune_conqur`, `scripts/batch_contract.R`). Such a bin is
+  scored on its corrected candidates only. If none can be scored, its taxa stay uncorrected and
+  `batch_correction_methods.tsv` records `original_selected`. Runs that completed before are
+  unchanged: the six synthetic fixtures that failed now complete, and a passing fixture gives
+  byte-identical output. The packaged ConQuR is not modified; the patch stops if the pinned code differs.
+
 - **Host depletion no longer depends on input route or record order (`--host_depletion_frag no`, default).**
   minimap2's `-ax sr` preset pairs adjacent mate-named reads (fragment mode). Reads extracted from a BAM/CRAM
   have mates adjacent, paired FASTQ has all R1 then all R2, so the same reads were depleted differently by

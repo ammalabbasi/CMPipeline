@@ -21,3 +21,9 @@ repository.
   `Remote*`/`Github*` fields that record the commit (`conda_envs/recipes/r-conqur/build.sh`);
   cqrReg is built as distributed.
 - Both programs come with no warranty; see their licenses.
+- **Run-time modification of ConQuR (2026-10-06, audit K04).** `scripts/batch_contract.R`
+  (`guarded_tune_conqur`) makes a modified copy of `Tune_ConQuR` in memory each time batch
+  correction runs; the package itself is unchanged. Two statements are changed. (1) The adonis
+  benchmark of the uncorrected table gets the same single-batch guard that ConQuR already applies
+  to its corrected candidates. (2) When no table in a bin can be scored, the uncorrected table is
+  kept. The modified function is distributed under GPL-3 as part of this repository.
