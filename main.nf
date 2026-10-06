@@ -194,6 +194,7 @@ params.validation_refseq_snapshot = null
 params.hg38_db=null       // Set in a site profile or with --hg38_db
 params.t2t_phix_db=null    // Set in a site profile or with --t2t_phix_db
 params.pangenome_db=null  // optional .mmi file or directory containing .mmi files
+params.host_depletion_frag = 'no'   // no (default, 2026-10-06) | auto: minimap2 -ax sr pairs ADJACENT mates (fragment mode); 'no' makes depletion independent of input route/record order (Ludmil E0, decision 37)
 params.kraken_db=null     // Set in a site profile or with --kraken_db
 params.metaphlan_db=null  // Set in a site profile or with --metaphlan_db
 params.metaphlan_index="mpa_vJun23_CHOCOPhlAnSGB_202307"  // Bowtie2 index name inside --metaphlan_db
@@ -389,6 +390,9 @@ workflow {
     if (!(params.extract_low_score_mapped instanceof CharSequence) ||
         !(params.extract_low_score_mapped.toString() in ['auto', 'on', 'off'])) {
         error "--extract_low_score_mapped must be auto, on or off (got '${params.extract_low_score_mapped}')"
+    }
+    if (!(params.host_depletion_frag instanceof CharSequence) || !(params.host_depletion_frag.toString() in ['no', 'auto'])) {
+        error "--host_depletion_frag must be no or auto (got '${params.host_depletion_frag}')"
     }
 
     if (params.start_from == 'beginning' && !skipHostDepletion) {

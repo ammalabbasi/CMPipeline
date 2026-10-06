@@ -4,6 +4,14 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Host depletion no longer depends on input route or record order (`--host_depletion_frag no`, default).**
+  minimap2's `-ax sr` preset pairs adjacent mate-named reads (fragment mode). Reads extracted from a BAM/CRAM
+  have mates adjacent, paired FASTQ has all R1 then all R2, so the same reads were depleted differently by
+  route. Every host-depletion call now runs with `--frag=no`. Tested on the real GRCh38/T2T indexes: only
+  human-like reads changed (BAM-order runs had removed more of them); microbial reads were identical. BAM/CRAM
+  cohorts processed before this change should be re-run from host depletion. `--host_depletion_frag auto`
+  restores the old behaviour.
+
 - **BAM/CRAM extraction missed low-score mapped reads in `bwa mem -T 0` alignments (Ludmil 1 Oct,
   L8; ported from pksProfiler E1).** GDC aligned TCGA with `bwa mem -T 0`, so microbial reads with a
   chance short human hit were reported mapped (AS < 30) and FLAG 4 extraction never saw them.

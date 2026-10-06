@@ -29,14 +29,20 @@ process mapReads {
     path("${sampleID}.depletion_counts.tsv"), emit: counts
 
     script:
+    // --frag=no (default): every read is depleted on its own. minimap2's sr preset otherwise treats
+    // ADJACENT mate-named reads as one fragment (mate rescue), so the same reads were depleted
+    // differently from BAM/CRAM (mates adjacent) and paired FASTQ (R1 block, then R2 block).
+    // Measured on the real GRCh38/T2T indexes (SLURM 12425893): only human-like reads differ;
+    // F. nucleatum, B. fragilis and pks+ E. coli reads are identical in every order (audit X01, Ludmil E0).
+    def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''
     """
     set -euo pipefail
     gzip -t "${reads_fastq}"
 
-    minimap2 -2 -ax sr -t "${task.cpus}" "${params.hg38_db}" "${reads_fastq}" |
+    minimap2 -2 -ax sr ${frag} -t "${task.cpus}" "${params.hg38_db}" "${reads_fastq}" |
         samtools fastq -@ "${task.cpus}" -f 4 -F 2304 | gzip -c > "${sampleID}.hg38.fastq.gz"
 
-    minimap2 -2 -ax sr -t "${task.cpus}" "${params.t2t_phix_db}" "${sampleID}.hg38.fastq.gz" |
+    minimap2 -2 -ax sr ${frag} -t "${task.cpus}" "${params.t2t_phix_db}" "${sampleID}.hg38.fastq.gz" |
         samtools fastq -@ "${task.cpus}" -f 4 -F 2304 | gzip -c > "${sampleID}.hg38.t2t.fastq.gz"
 
     if [[ -n "${params.pangenome_db ?: ''}" ]]; then
@@ -50,7 +56,7 @@ process mapReads {
         [[ "\${#INDEXES[@]}" -gt 0 ]] || { echo "ERROR: No .mmi files found under ${params.pangenome_db}" >&2; exit 1; }
         cp "${sampleID}.hg38.t2t.fastq.gz" "${sampleID}.current.fastq.gz"
         for mmi in "\${INDEXES[@]}"; do
-            minimap2 -2 -ax sr -t "${task.cpus}" "\$mmi" "${sampleID}.current.fastq.gz" |
+            minimap2 -2 -ax sr ${frag} -t "${task.cpus}" "\$mmi" "${sampleID}.current.fastq.gz" |
                 samtools fastq -@ "${task.cpus}" -f 4 -F 2304 | gzip -c > "${sampleID}.next.fastq.gz"
             mv "${sampleID}.next.fastq.gz" "${sampleID}.current.fastq.gz"
         done
