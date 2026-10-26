@@ -668,6 +668,80 @@ def low_score_rescue_summary(params: dict) -> dict | None:
     }
 
 
+# ------------------------------------------------------ input alignments (X13 / E3)
+
+
+def _qc_rows(params: dict) -> list[dict] | None:
+    root = params.get("qc_summary_dir")
+    if not root or root in {"null", "None"}:
+        return None
+    path = Path(root) / "cmp.qc.summary.tsv"
+    if not path.is_file():
+        return None
+    with path.open() as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def input_alignments_summary(params: dict) -> dict | None:
+    """Cohort view of the BAM/CRAM input provenance (scripts/header_provenance.py columns of the
+    QC summary): how many inputs per reference fingerprint, per aligner configuration, per @PG
+    chain and per upstream unmapped filter. Counts only -- no sample ID, path or read group."""
+    rows = [r for r in (_qc_rows(params) or [])
+            if r.get("input_ref_fingerprint") not in (None, "", "NA")]
+    if not rows:
+        return None
+
+    def tally(key):
+        out: dict[str, int] = defaultdict(int)
+        for r in rows:
+            out[key(r)] += 1
+        return dict(sorted(out.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    def value(r, column):
+        return r.get(column) or "NA"
+
+    def reference(r):
+        return (f"{value(r, 'input_ref_fingerprint')[:12]} {value(r, 'input_ref_build')}, "
+                f"{value(r, 'input_ref_contigs')} contigs (ALT {value(r, 'input_ref_alt_contigs')}, "
+                f"decoy {value(r, 'input_ref_decoy_contigs')}, HLA {value(r, 'input_ref_hla_contigs')}, "
+                f"viral {value(r, 'input_ref_viral_contigs')}, chrEBV {value(r, 'input_ref_has_ebv')})")
+
+    def aligner(r):
+        name = f"{value(r, 'upstream_aligner')} {value(r, 'upstream_aligner_version')}"
+        options = r.get("input_bwa_options")
+        return f"{name} {options}" if options not in (None, "", "NA") else name
+
+    return {
+        "inputs": len(rows),
+        "references": tally(reference),
+        "aligners": tally(aligner),
+        "pg_chains": tally(lambda r: value(r, "input_pg_chain")),
+        "unmapped_filter": tally(lambda r: value(r, "input_unmapped_filter")),
+    }
+
+
+def render_input_alignments(summary: dict | None) -> list[str]:
+    if not summary:
+        return []
+    refs, aligners = summary["references"], summary["aligners"]
+    out = ["INPUT ALIGNMENTS (BAM/CRAM headers; per sample: QC_SUMMARY input_* columns)",
+           f"  {summary['inputs']} input(s): {len(refs)} reference fingerprint(s); "
+           f"{len(aligners)} aligner configuration(s)"]
+    out.append("  reference (md5 of @SQ SN:LN, first 12 hex)")
+    out += [f"    {n:>6}  {key}" for key, n in refs.items()]
+    out.append("  aligner (from @PG; bwa mem options reduced to letters and numbers)")
+    out += [f"    {n:>6}  {key}" for key, n in aligners.items()]
+    out.append("  @PG chain (program:version)")
+    out += [f"    {n:>6}  {key}" for key, n in summary["pg_chains"].items()]
+    out.append("  upstream unmapped filter")
+    out += [f"    {n:>6}  {key}" for key, n in summary["unmapped_filter"].items()]
+    if len(refs) > 1:
+        out.append("  *** more than one input reference: unmapped reads were defined against different")
+        out.append("      contig sets (decoy / viral / ALT), so extraction is not equivalent across inputs.")
+    out.append("")
+    return out
+
+
 # ------------------------------------------------------- sample outcomes (X05/X06)
 
 
@@ -828,6 +902,9 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
             add(f"  {column:<30}{'-' if value is None else value:>14}  ({totals.get(column + '_samples', 0)} samples)")
         add("")
 
+    for line in render_input_alignments((record.get("outputs") or {}).get("input_alignments")):
+        add(line)
+
     for line in render_sample_outcomes((record.get("outputs") or {}).get("sample_outcomes")):
         add(line)
 
@@ -906,6 +983,8 @@ def main() -> int:
         "cohort_tables": output_checksums(launch_params),
         # --extract_low_score_mapped, aggregated over the BAM/CRAM inputs (counts only; L8).
         "low_score_rescue": low_score_rescue_summary(launch_params),
+        # BAM/CRAM header provenance: reference fingerprints, aligner chains (counts only; X13).
+        "input_alignments": input_alignments_summary(launch_params),
         # How each sample ended (terminal_state), counts only (audit X05/X06).
         "sample_outcomes": sample_outcomes(launch_params),
     }

@@ -5,7 +5,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 
 | Directory | Contents |
 |---|---|
-| `UNMAPPED_BAM` | `<sample>.reads_after_filtering.txt`, `<sample>.extract_counts.tsv` and `<sample>.upstream_aligner.tsv` (BAM/CRAM) and the fastp JSON/HTML reports; the extracted and filtered FASTQ, and `<sample>.low_as_read_ids.txt.gz` (rescued read names), only with `--save_intermediates true` |
+| `UNMAPPED_BAM` | `<sample>.reads_after_filtering.txt`, `<sample>.extract_counts.tsv`, `<sample>.upstream_aligner.tsv` and `<sample>.input_provenance.tsv` (BAM/CRAM) and the fastp JSON/HTML reports; the extracted and filtered FASTQ, and `<sample>.low_as_read_ids.txt.gz` (rescued read names), only with `--save_intermediates true` |
 | `FASTQC` | per-stage FastQC reports (raw, filtered, post-GRCh38, post-T2T, post-pangenome) |
 | `MAPPED_READS` | `<sample>.host_depleted.fastq.gz` and `<sample>.depletion_counts.tsv`; `.hg38.fastq.gz` and `.hg38.t2t.fastq.gz` only with `--save_intermediates true` |
 | `BRACKEN` | KrakenUniq reports, Bracken genus/species tables, merged tables |
@@ -14,7 +14,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 | `HUMANN3` | gene families, pathway abundance and coverage, plus `merged/` |
 | `04_DECONTAMINATION`, `05_BATCH_CORRECTION`, `06_VALIDATION` | optional stages; see their sections |
 | `MULTIQC` | `multiqc_report.html` over fastp JSON and all five FastQC passes |
-| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 51 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 63 columns) and `cmp_cohort_report.html` |
 
 Each directory can be moved on its own with the matching parameter: `--unmapped_bam_dir`,
 `--fastqc_dir`, `--mapped_reads_dir`, `--krakenuniq_bracken_dir`, `--metaphlan4_dir`,
@@ -89,6 +89,28 @@ The per-sample survival rows are also written to `QC_SUMMARY/low_as_survival/<sa
 and `RUN_REPORT.txt` gets a counts-only *LOW-SCORE RESCUE* section (inputs per mode and reason, upstream
 aligners, rescued reads summed per stage).
 
+**Input provenance (BAM/CRAM; audit X13, Ludmil E3).** Twelve `input_*` columns say which
+reference each input was aligned to and how, read from the header extractReads already reads for
+the rescue decision (`scripts/header_provenance.py`; one header read per sample). All `NA` for FASTQ
+input. Nothing here is copied from a command line, read group or path: program names, versions,
+option letters, numbers and contig counts only.
+
+| Column | Meaning |
+|---|---|
+| `input_ref_fingerprint` | md5 over the ordered `@SQ` `SN:LN` lines. Equal for inputs on the same reference; different for a different build or contig set |
+| `input_ref_m5_fingerprint` | md5 over the sorted `@SQ` `M5` values (`NA` unless every `@SQ` has one); equal across `chr1`/`1` renamings of one build |
+| `input_ref_contigs`, `input_ref_build` | number of `@SQ` lines; `GRCh38` / `GRCh37` / `T2T-CHM13` from chr1's length, else `unknown` or `no_chr1` |
+| `input_ref_alt_contigs`, `input_ref_decoy_contigs`, `input_ref_hla_contigs`, `input_ref_viral_contigs` | contigs per class, by name: `*_alt`; hs38d1 `*_decoy` / `chrUn_JTFH*` / `hs37d5`; `HLA-*`; viral (`chrEBV`, `HPV*`, `HBV`, `HCV*`, `HIV*`, `HTLV*`, `KSHV`, `CMV`, `MCV`, `SV40`, phiX). GDC GRCh38.d1.vd1 has 2,385 decoys and ~200 viral contigs; reads that the submitter aligned to them are primary mapped, so FLAG 4 extraction does not see them |
+| `input_ref_has_ebv` | `true` when `chrEBV` (or `NC_007605`) is a contig of the reference |
+| `input_pg_chain` | the `@PG` records in `PP` order as `program:version` (e.g. `bwa:0.7.15-r1140 > samtools:1.3 > MarkDuplicates:2.4.1`) |
+| `input_bwa_options` | the `bwa mem` options that change alignments, as letters and numbers only (e.g. `-T 0`, `-K 100000000 -M -Y`); `default` when none, `NA` without bwa mem. `-R`, `-H`, `-o`, file names and any non-numeric value are never recorded |
+| `input_unmapped_filter` | `none`, or the upstream step(s) in the `@PG` chain that removed unmapped reads before the file was written: `samtools_view_exclude_unmapped` (`-F` with bit 4, or an `-e` expression excluding unmapped), `samtools_view_require_proper_pair` (`-f` with bit 2), `samtools_view_min_mapq` (`-q` > 0), `samtools_view_region` (`-L` or a region list), `sambamba_view_filter` |
+
+`RUN_REPORT.txt` gets a counts-only *INPUT ALIGNMENTS* section: inputs per reference fingerprint
+(with build, contig count and class counts), per aligner configuration (e.g. `50  bwa 0.7.15-r1140 -T 0`),
+per `@PG` chain, and per upstream unmapped filter, with a warning when more than one input reference is
+present. The JSON record carries the same under `outputs.input_alignments`.
+
 `pct_retained_overall` is host-depleted reads as a percentage of the reads **entering fastp**:
 the library for FASTQ, but only the extracted unmapped subset for BAM/CRAM. Compare samples of
 different input types with `pct_retained_of_library`, not `pct_retained_overall`.
@@ -128,7 +150,7 @@ Every run produces, unless switched off:
 
 - **`RESULTS/MULTIQC/multiqc_report.html`** — fastp JSON plus all five FastQC passes
   (raw, filtered, post-GRCh38, post-T2T, post-pangenome). Disable with `--skip_multiqc true`.
-- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 51 columns (see *Outputs*).
+- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 63 columns (see *Outputs*).
 - **`RESULTS/QC_SUMMARY/cmp_cohort_report.html`** — a self-contained page (no network, no
   CDN) with the retention chart and the tables. Disable with `--skip_cohort_report true`.
 - **`pipeline_info/RUN_REPORT.txt`** and the provenance record — see *Outputs*.

@@ -804,10 +804,11 @@ workflow {
             }.set { INPUTS_BY_TYPE }
 
             extractReads(INPUTS_BY_TYPE.alignment.map { sampleID, inputType, inputs, references -> tuple(sampleID, inputType, inputs[0], references) },
-                         depsOf(["${params.scripts}/validate_cram_reference.py", "${params.scripts}/low_score_rescue.py"], [params.cram_reference]))
+                         depsOf(["${params.scripts}/validate_cram_reference.py", "${params.scripts}/low_score_rescue.py", "${params.scripts}/header_provenance.py"], [params.cram_reference]))
             extractReads.out.reads.set { EXTRACTED_READS }
             qcParts << extractReads.out.counts   // *.extract_counts.tsv: BAM/CRAM library denominator (C07)
             qcParts << extractReads.out.aligner  // *.upstream_aligner.tsv: @PG aligner/-T and low-AS mode (L8)
+            qcParts << extractReads.out.provenance  // *.input_provenance.tsv: @SQ fingerprint, @PG chain (X13)
             // `pretrimmed` marks reads that came out of an aligned BAM/CRAM: whoever
             // produced the alignment adapter-trimmed them before aligning.
             INPUTS_BY_TYPE.fastq

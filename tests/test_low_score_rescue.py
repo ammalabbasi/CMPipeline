@@ -218,6 +218,7 @@ class ExtractionOnSyntheticAlignments(unittest.TestCase):
             "reads": read_fastq_gz(work / "S.UNMAPPED.fastq.gz"),
             "counts": read_tsv_row(work / "S.extract_counts.tsv"),
             "aligner": read_tsv_row(work / "S.upstream_aligner.tsv"),
+            "provenance": read_tsv_row(work / "S.input_provenance.tsv"),
             "stderr": result.stderr,
             "ids": None,
             "leftovers": sorted(p.name for p in work.iterdir()),
@@ -318,12 +319,29 @@ class ExtractionOnSyntheticAlignments(unittest.TestCase):
                           out["aligner"]["upstream_bwa_min_score"]), ("bwa", "0.7.15-r1140", "0"))
         self.assertNotIn("SECRET", "".join(out["aligner"].values()) + out["stderr"])
 
+    def test_input_provenance_from_the_same_header(self):
+        """X13: the provenance row comes from the header the rescue decision read; no CL text."""
+        for kind in ("bam", "cram"):
+            with self.subTest(kind=kind):
+                out = self.run_module("auto", (PG_GDC, PG_SAMTOOLS), kind=kind)
+                prov = out["provenance"]
+                self.assertEqual(prov["input_ref_contigs"], "1")
+                self.assertEqual(prov["input_ref_build"], "no_chr1")
+                # bwa, the synthetic header's samtools 1.3, and the samtools that built this test
+                # BAM/CRAM -- but NOT the pipeline's own header dump (`-H --no-PG`).
+                chain = prov["input_pg_chain"].split(" > ")
+                self.assertEqual(chain[:2], ["bwa:0.7.15-r1140", "samtools:1.3"])
+                self.assertEqual(len(chain), 3, prov["input_pg_chain"])
+                self.assertEqual(prov["input_bwa_options"], "-T 0")
+                self.assertEqual(prov["input_unmapped_filter"], "none")
+                self.assertNotIn("SECRET", "".join(prov.values()))
+
     def test_no_scratch_files_left_behind(self):
         for mode in ("on", "off"):
             with self.subTest(mode=mode):
                 left = self.run_module(mode, (PG_GDC,))["leftovers"]
                 allowed = {".command.sh", "S.UNMAPPED.fastq.gz", "S.extract_counts.tsv",
-                           "S.upstream_aligner.tsv", "S.low_as_read_ids.txt.gz"}
+                           "S.upstream_aligner.tsv", "S.input_provenance.tsv", "S.low_as_read_ids.txt.gz"}
                 self.assertEqual(set(left) - allowed, set())
 
 

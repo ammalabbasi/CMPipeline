@@ -45,6 +45,15 @@ COLUMNS = [
     "upstream_aligner", "upstream_aligner_version", "upstream_bwa_min_score",
     "low_as_mode", "low_as_mode_reason", "low_as_reads_extracted", "low_as_no_as_records",
     "low_as_reads_after_depletion", "low_as_reads_classified", "low_as_share_of_bracken",
+    # input provenance, BAM/CRAM only (audit X13; scripts/header_provenance.py, from the header the
+    # rescue decision reads): the @SQ fingerprint (md5 of ordered SN:LN) and M5-set fingerprint,
+    # contig count, build from chr1's length, contig classes (ALT / hs38d1 decoy / HLA / viral incl.
+    # chrEBV), the @PG chain as program:version, bwa mem options reduced to letters and numbers, and
+    # any upstream step that removed unmapped reads (none | FILTER_REASONS). NA for FASTQ input.
+    "input_ref_fingerprint", "input_ref_m5_fingerprint", "input_ref_contigs", "input_ref_build",
+    "input_ref_alt_contigs", "input_ref_decoy_contigs", "input_ref_hla_contigs",
+    "input_ref_viral_contigs", "input_ref_has_ebv", "input_pg_chain", "input_bwa_options",
+    "input_unmapped_filter",
     # input and filtering (fastp)
     "reads_raw", "bases_raw", "q30_rate_raw",
     "reads_after_fastp", "q30_rate_filtered", "duplication_rate",
@@ -258,6 +267,21 @@ def parse_upstream_aligner(path: Path) -> dict:
     return {field: record.get(field) or NA for field in UPSTREAM_FIELDS}
 
 
+PROVENANCE_FIELDS = ("input_ref_fingerprint", "input_ref_m5_fingerprint", "input_ref_contigs",
+                     "input_ref_build", "input_ref_alt_contigs", "input_ref_decoy_contigs",
+                     "input_ref_hla_contigs", "input_ref_viral_contigs", "input_ref_has_ebv",
+                     "input_pg_chain", "input_bwa_options", "input_unmapped_filter")
+
+
+def parse_input_provenance(path: Path) -> dict:
+    """<sample>.input_provenance.tsv from extractReads (scripts/header_provenance.py)."""
+    with path.open() as handle:
+        records = list(csv.DictReader(handle, delimiter="\t"))
+    if len(records) != 1:
+        raise ValueError(f"{path.name}: expected one row, got {len(records)}")
+    return {field: records[0].get(field) or NA for field in PROVENANCE_FIELDS}
+
+
 def parse_low_as_survival(path: Path) -> dict:
     with path.open() as handle:
         records = list(csv.DictReader(handle, delimiter="\t"))
@@ -446,6 +470,9 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None) -> list
 
     for path in sorted(inputs.rglob("*.upstream_aligner.tsv")):
         row_for(sample_of(path, ".upstream_aligner.tsv")).update(parse_upstream_aligner(path))
+
+    for path in sorted(inputs.rglob("*.input_provenance.tsv")):
+        row_for(sample_of(path, ".input_provenance.tsv")).update(parse_input_provenance(path))
 
     for path in sorted(inputs.rglob("*.low_as_survival.tsv")):
         row_for(sample_of(path, ".low_as_survival.tsv")).update(parse_low_as_survival(path))

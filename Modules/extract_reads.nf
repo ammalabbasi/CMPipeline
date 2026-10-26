@@ -26,6 +26,11 @@ process extractReads {
     // --extract_low_score_mapped: the upstream aligner, its version and bwa -T from @PG (never the
     // CL itself), and the mode this sample got and why. One row, metadata only.
     path("${sampleID}.upstream_aligner.tsv"), emit: aligner
+    // Input provenance (audit X13, Ludmil E3): @SQ fingerprint and contig classes (decoy / viral /
+    // HLA / ALT, chrEBV), the @PG chain as program:version, bwa mem options reduced to letters and
+    // numbers, and any upstream step that removed unmapped reads. From the same header text as the
+    // rescue decision; never the CL, a read group, a path or a sample barcode.
+    path("${sampleID}.input_provenance.tsv"), emit: provenance
     // Names of the rescued low-AS reads exactly as `samtools fastq -N` wrote them, so lowAsSurvival
     // can count them after host depletion and classification. Only when the rescue is on.
     tuple val(sampleID), path("${sampleID}.low_as_read_ids.txt.gz"), emit: low_as_ids, optional: true
@@ -69,11 +74,15 @@ process extractReads {
     # the header's @PG runs bwa mem / bwa-mem2 mem with -T < 30; STAR, minimap2, bwa aln, bwa mem at
     # the default -T, or no @PG leave it off. Decided per sample from the header alone (the CL is
     # read in memory and never written; scripts/low_score_rescue.py). Ported from pksProfiler E1.
-    samtools view -H "${alignment}" > input.header.sam
+    # The header is read from the alignment ONCE: the same text also gives the input provenance row
+    # (--provenance; scripts/header_provenance.py, audit X13). --no-PG: samtools would otherwise add
+    # its own @PG for this header dump, and the pipeline's samtools would appear in the input's chain.
+    samtools view -H --no-PG "${alignment}" > input.header.sam
     LOW_AS="\$(python "${params.scripts}/low_score_rescue.py" decide \
         --header input.header.sam --sample "${sampleID}" \
         --mode "${params.extract_low_score_mapped}" \
-        --output "${sampleID}.upstream_aligner.tsv")"
+        --output "${sampleID}.upstream_aligner.tsv" \
+        --provenance "${sampleID}.input_provenance.tsv")"
     rm -f input.header.sam
 
     # `samtools fastq -N -o FILE` writes only READ1/READ2 to FILE and sends category-0

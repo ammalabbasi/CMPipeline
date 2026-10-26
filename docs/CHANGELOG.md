@@ -104,12 +104,29 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**Input provenance for BAM/CRAM: reference fingerprint and aligner chain** (audit X13, Ludmil E3;
+pksProfiler `70cb629`). Nothing recorded which human build each BAM/CRAM was aligned to, or how, so a
+results tree mixing TCGA (GDC GRCh38.d1.vd1: hs38d1 decoys, chrEBV, ~200 viral contigs), Mutographs and
+Hartwig inputs could not say that their unmapped reads were defined against different contig sets.
+- `extractReads` writes `<sample>.input_provenance.tsv` from the header it already reads for the
+  low-score rescue decision (`low_score_rescue.py decide --provenance`, `scripts/header_provenance.py`):
+  the header is read once per sample.
+- Twelve QC summary columns (63 in all): `input_ref_fingerprint` (md5 of ordered `@SQ` SN:LN),
+  `input_ref_m5_fingerprint`, `input_ref_contigs`, `input_ref_build`, ALT / decoy / HLA / viral contig
+  counts, `input_ref_has_ebv`, `input_pg_chain` (program:version), `input_bwa_options` (letters and
+  numbers only, e.g. `-T 0`) and `input_unmapped_filter` (an upstream `samtools view -F 4`-type step).
+- `RUN_REPORT.txt` gains a counts-only *INPUT ALIGNMENTS* section (`outputs.input_alignments` in the
+  JSON): e.g. "50 input(s): 1 reference fingerprint(s); 1 aligner configuration(s)" and
+  "50  bwa 0.7.15-r1140 -T 0".
+- Never recorded: the `@PG` CL itself, `@RG` text, read-group/sample barcodes, paths. No result changes;
+  `extractReads` re-runs on `-resume` (its script and helper digests changed).
+
 **Per-sample failure policy: every sample ends in one reported state** (audit X05/X06; pksProfiler
 `dc5d703`, `e126439`).
 - Alignment validation batches only samples that are columns of the species table. Under
   `--sample_failure_strategy ignore`, a sample whose Bracken task failed was batched anyway, the scorer
   exited 1 on it, and the strict validation step ended the run; such a sample is now logged and skipped.
-- The QC summary gains `metaphlan_status`, `humann_status` and `terminal_state` (51 columns):
+- The QC summary gains `metaphlan_status`, `humann_status` and `terminal_state` (51 in all at that point):
   `completed_profiled` / `completed_no_call` / `completed`, `failed_at_<stage>` or `excluded_<reason>`.
   MetaPhlAn and HUMAnN failures, silent before, are named per sample. `main.nf` passes the requested
   stages (`--stages`), each sample's input type, and which HUMAnN profiles finished.
