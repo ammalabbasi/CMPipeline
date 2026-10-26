@@ -20,7 +20,7 @@ class HostDepletionFrag(unittest.TestCase):
     def test_every_depletion_call_carries_frag(self):
         mod = (ROOT / "Modules" / "map_reads.nf").read_text()
         calls = re.findall(r"minimap2 [^|\n]*-ax sr[^|\n]*", mod)
-        self.assertEqual(len(calls), 3, calls)          # GRCh38, T2T+PhiX, pangenome loop
+        self.assertEqual(len(calls), 3, calls)          # GRCh38, T2T-CHM13, pangenome loop
         for c in calls:
             self.assertIn("${frag}", c)
         self.assertIn("def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''", mod)

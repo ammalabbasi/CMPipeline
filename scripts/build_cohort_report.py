@@ -34,7 +34,9 @@ NA = {"", "NA", None}
 
 STAGES = [
     ("pct_removed_hg38", "Removed: GRCh38", "--seg-1"),
-    ("pct_removed_t2t_phix", "Removed: T2T + PhiX", "--seg-2"),
+    # The --t2t_phix_db index holds T2T-CHM13v2.0 only, no phiX (docs/host_depletion_references.md);
+    # the column keeps its historical name.
+    ("pct_removed_t2t_phix", "Removed: T2T-CHM13", "--seg-2"),
     ("pct_removed_pangenome", "Removed: pangenome", "--seg-3"),
     ("__retained", "Retained (microbial candidate)", "--seg-4"),
 ]

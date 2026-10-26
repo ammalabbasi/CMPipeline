@@ -104,6 +104,19 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**phiX: the "T2T + PhiX" labels were wrong; the index holds no phiX** (port review #19). The second
+host-depletion index, `human-GCA-phix-db.mmi` (`--t2t_phix_db`), is T2T-CHM13v2.0 alone: 25 sequences,
+the published CHM13v2.0 total to the base (read from the index by pksProfiler, 2026-10-22). In the code,
+`scripts/download_references.sh` concatenates `ref/NC_001422.fna` into the index FASTA but never downloads
+it, and has no `set -e`. The cohort report said "Removed: T2T + PhiX" and the README "T2T-CHM13+PhiX".
+- Labels now say T2T-CHM13; `docs/host_depletion_references.md` documents both indexes, the mechanism, and
+  what it means: **phiX spike-in reads are not removed and count in KrakenUniq/Bracken totals and library
+  sizes**; viruses are dropped at consensus, so consensus and downstream tables carry no phiX taxon (with
+  `--skip_consensus`, the Bracken tables that go on to decontamination do).
+- Unchanged on purpose: the index, `--t2t_phix_db`, and the columns `reads_after_t2t_phix` /
+  `pct_removed_t2t_phix` (rebuilding mid-cohort would change depletion for samples already run). No
+  result changes.
+
 **QC floor: a sample that cannot be assessed is `not_assessable`, never a microbial negative**
 (pksProfiler COHORT_CHECKS A3, a proposal there; port review #34). A BAM/CRAM pre-filtered to mapped
 reads gives an empty profile that decontam and ConQuR would read as "no microbes" and that would sit in
@@ -157,7 +170,7 @@ be rebuilt in place and every run would print the same line.
   `CHANGED: listing` / `CHANGED: key` / `not_in_manifest` / `unused`) and the JSON record `databases`.
   Reads metadata, a few small key files (largest: the 98 MB MetaPhlAn `.pkl`, 125 MB KrakenUniq
   `taxDB`) and the first kB of each `.mmi`; a few seconds per run. A record, not a gate. No result changes.
-- The `t2t_phix_db` row states that the index contains no phiX (see the phiX entry below).
+- The `t2t_phix_db` row states that the index contains no phiX (see the phiX entry above).
 
 **Per-sample failure policy: every sample ends in one reported state** (audit X05/X06; pksProfiler
 `dc5d703`, `e126439`).
@@ -228,7 +241,7 @@ said so: `RUN_REPORT.txt` listed what the lockfiles specify.
 - Every path parameter is resolved and checked before the first task is submitted. A flag
   passed without a value (`--pangenome_db` on its own, which Groovy turns into the Boolean
   `true`) is named as such rather than reaching minimap2 hours later.
-- Required databases are checked per stage: GRCh38 and T2T+PhiX for host depletion,
+- Required databases are checked per stage: GRCh38 and T2T-CHM13 (`--t2t_phix_db`) for host depletion,
   KrakenUniq and MetaPhlAn for classification, both HUMAnN3 databases when it is enabled.
 
 **Speed and cost**

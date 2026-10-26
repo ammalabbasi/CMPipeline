@@ -131,6 +131,8 @@ option letters, numbers and contig counts only.
 per `@PG` chain, and per upstream unmapped filter, with a warning when more than one input reference is
 present. The JSON record carries the same under `outputs.input_alignments`.
 
+**Host-depletion columns.** `reads_after_hg38` / `pct_removed_hg38` are the GRCh38 pass; `reads_after_t2t_phix` / `pct_removed_t2t_phix` are the **T2T-CHM13** pass — the index named `human-GCA-phix-db.mmi` contains no phiX, so phiX spike-in is not removed and counts in the KrakenUniq/Bracken totals (the names are historical; see [host_depletion_references.md](host_depletion_references.md)).
+
 `pct_retained_overall` is host-depleted reads as a percentage of the reads **entering fastp**:
 the library for FASTQ, but only the extracted unmapped subset for BAM/CRAM. Compare samples of
 different input types with `pct_retained_of_library`, not `pct_retained_overall`.
