@@ -3,8 +3,8 @@
 # (RUN_REPORT TOOL VERSIONS). A row makes `reports` an accepted self-report for exactly that
 # package at exactly that conda version; every other version still has to match its pin.
 # Add a row only after checking the build's own source, and say where the string comes from.
-# None is needed for the current lockfiles (checked 2026-10-26 against the built envs: every
-# recorded tool reports its package version). pksProfiler's bracken 3.1p1 -> 3.0.1 row does not
-# apply: CMPipeline pins bracken 2.9, which reports v2.9.
+# The bracken row came with the 2026-10-26 tool update (2.9 -> 3.1p1), copied from pksProfiler;
+# confirmed on the built env: conda-meta bracken 3.1p1 hc52dbad_0, binary prints "Bracken v3.0.1".
 #
 # package	conda_version	reports	why
+bracken	3.1p1	3.0.1	upstream v3.1 tag still sets VERSION="3.0.1" in the bracken script; bioconda 3.1p1 builds that tag (pksProfiler, checked 2026-10-06; CMPipeline env checked 2026-10-26)

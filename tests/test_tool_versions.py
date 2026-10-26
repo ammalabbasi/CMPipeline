@@ -126,7 +126,7 @@ class RecordScript(unittest.TestCase):
         _result, _rows = run_record("strict", self.lock, ["minimap2"], self.env(), out_dir=self.tmp)
         header = (self.tmp / ".tool_versions.tsv").read_text().splitlines()[0].split("\t")
         self.assertEqual(header, ["process", "tool", "package", "status", "version", "pinned", "path",
-                                  "conda_prefix", "env", "raw", "attempts", "read_exit"])
+                                  "conda_prefix", "env", "raw", "attempts", "read_exit", "check"])
 
     def test_login_minimap2_ahead_of_the_env_fails_strict(self):
         """The CRC50 Job 12380606 case: tools/minimap2 2.24 earlier on PATH than the env."""
@@ -467,7 +467,7 @@ class Wiring(unittest.TestCase):
 
 TRACE_HEADER = ["task_id", "hash", "native_id", "name", "status", "exit", "workdir"]
 RECORD_HEADER = ["process", "tool", "package", "status", "version", "pinned", "path", "conda_prefix",
-                 "env", "raw", "attempts", "read_exit"]
+                 "env", "raw", "attempts", "read_exit", "check"]
 
 
 class Finaliser(unittest.TestCase):
@@ -525,6 +525,26 @@ class Finaliser(unittest.TestCase):
         self.assertIn("TOOL VERSION MISMATCH", text)
         self.assertIn("were NOT produced by the pinned tools", text)
         self.assertIn("/home/u/tools/minimap2/minimap2", text)
+
+    def test_task_level_warn_is_listed_but_not_blocking(self):
+        """2026-10-26: the integration test relaxes one task (ext.tool_version_check = 'warn') for its
+        krakenuniq stub; a strict run must list that row but not fail on it alone."""
+        waived = dict(self.record("krakenuniq", "1.0.4", status="OUTSIDE_ENV", path="(function krakenuniq)"),
+                      check="warn")
+        self.task("Bracken (S1)", [waived])
+        summary = self.collect("strict")
+        self.assertEqual([(p["status"], p["waived"]) for p in summary["problems"]], [("OUTSIDE_ENV", True)])
+        self.assertIn("listed, not blocking", "\n".join(FP.render_tool_versions(summary)))
+        # the same problem from a strict task is blocking
+        self.task("Bracken (S2)", [dict(waived, check="strict")])
+        self.assertEqual([p["waived"] for p in self.collect("strict")["problems"]], [False])
+
+    def test_bracken_alias_is_accepted(self):
+        """bioconda bracken 3.1p1 prints v3.0.1 (scripts/tool_version_aliases.tsv)."""
+        lock = self.tmp / "k.txt"
+        lock.write_text(LOCK_HEADER + lock_line("bracken", "3.1p1"))
+        self.task("Bracken (S1)", [self.record("bracken", "3.0.1", env=lock)])
+        self.assertEqual(self.collect("strict")["problems"], [])
 
     def test_spec_is_rechecked(self):
         """A record the task called ok is re-judged against its spec's pins here."""

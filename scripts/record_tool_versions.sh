@@ -236,7 +236,7 @@ if [[ "$SPEC_KIND" == prefix && -n "$PREFIX" ]]; then
     [[ -n "$want" && "$want" != "$have" ]] && WRONG_PREFIX=1
 fi
 
-printf 'process\ttool\tpackage\tstatus\tversion\tpinned\tpath\tconda_prefix\tenv\traw\tattempts\tread_exit\n' > "$OUT"
+printf 'process\ttool\tpackage\tstatus\tversion\tpinned\tpath\tconda_prefix\tenv\traw\tattempts\tread_exit\tcheck\n' > "$OUT"
 
 problems=()
 for entry in "$@"; do
@@ -274,9 +274,11 @@ for entry in "$@"; do
         fi
     fi
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    # check: the mode this task ran under (a per-task ext.tool_version_check can relax one process,
+    # e.g. the integration test's krakenuniq stub); the finaliser lists, but does not fail on, warn rows.
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$PROCESS" "$tool" "$package" "$status" "$version" "$pinned" "$path" "$PREFIX" \
-        "$ENV_SPEC" "$(printf '%s' "$raw" | clean)" "$attempts" "$read_exit" >> "$OUT"
+        "$ENV_SPEC" "$(printf '%s' "$raw" | clean)" "$attempts" "$read_exit" "$MODE" >> "$OUT"
 
     case "$status" in
         NOT_FOUND)        problems+=("$tool: not found on PATH") ;;

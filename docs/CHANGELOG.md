@@ -17,6 +17,14 @@ Not yet released; these are the changes since the last tagged state of `main`.
   the choice to `<sample>.bracken_read_length.tsv`. **Species-level Bracken results change**; an integer
   restores a fixed length.
 
+- **Bracken failed for every sample since `--bracken_read_length auto` (`1cf242b`).** The
+  `kmer_distrib` sed in `Modules/Bracken.nf` had single backslashes before `(`, `)`, `.` and `1`
+  inside the Groovy script string. Nextflow's v1 parser (24.10/25.x default) refused to compile
+  `main.nf`; the v2 parser (26.04) compiled it but shifted every later interpolation of the Bracken
+  script onto the wrong value, so `kreport2mpa.py` was called from the sample name and every task
+  failed. The backslashes are doubled; `tests/test_bracken_read_length.py` now scans every module
+  script for invalid Groovy escapes. No run produced results with the broken line.
+
 - **Alignment validation is also run with `--frag=no`.** `alignForValidation` streamed interleaved mates
   into `minimap2 -ax sr` in fragment mode, the same input-route dependence fixed for host depletion.
   Validation calls may change; re-score.

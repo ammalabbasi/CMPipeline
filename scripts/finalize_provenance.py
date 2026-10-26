@@ -432,11 +432,14 @@ def collect_tool_versions(rows: list[dict], work_dir: str | None, repo_dir: Path
     tools: dict[tuple, dict] = {}
     problems: dict[tuple, dict] = {}
 
-    def problem(status, key, detail, process):
+    def problem(status, key, detail, process, waived=False):
+        # waived: the task ran with a per-task `ext.tool_version_check = 'warn'` (its record's
+        # `check` column). Listed in RUN_REPORT, but it does not fail a strict run on its own.
         entry = problems.setdefault((status,) + key, {"status": status, "detail": detail,
-                                                      "processes": set(), "tasks": 0})
+                                                      "processes": set(), "tasks": 0, "waived": True})
         entry["processes"].add(process)
         entry["tasks"] += 1
+        entry["waived"] = entry["waived"] and waived
 
     for row in rows:
         process = process_name(row.get("name", "")).rsplit(":", 1)[-1]
@@ -497,10 +500,11 @@ def collect_tool_versions(rows: list[dict], work_dir: str | None, repo_dir: Path
                         "NOT_FOUND": f"{tool} was not on the task's PATH",
                         "NO_ENV": f"{tool} {version} ran {where} with no conda env active",
                     }[verdict]
-                    problem(verdict, key, detail, process)
+                    problem(verdict, key, detail, process, waived=entry.get("check") == "warn")
                 elif verdict == INSTALLED_MISMATCH:
                     problem(verdict, key, f"{tool} reports {version} from {path}, but conda "
-                                          f"installed {package} {installed} in {prefix}", process)
+                                          f"installed {package} {installed} in {prefix}", process,
+                            waived=entry.get("check") == "warn")
 
     summary["tools"] = [dict(row, processes=sorted(row["processes"]))
                         for _key, row in sorted(tools.items())]
@@ -543,7 +547,9 @@ def render_tool_versions(summary: dict) -> list[str]:
                        " produced by the pinned tools")
         for entry in problems:
             out.append(f"  {entry['status']:<20}{entry['detail']}")
-            out.append(f"  {'':<20}{', '.join(entry['processes'])}; {entry['tasks']} task(s)")
+            out.append(f"  {'':<20}{', '.join(entry['processes'])}; {entry['tasks']} task(s)"
+                       + ("; task ran with ext.tool_version_check = 'warn' (listed, not blocking)"
+                          if entry.get("waived") else ""))
         out.append("")
     return out
 
@@ -933,7 +939,8 @@ def main() -> int:
               f"({', '.join(entry['processes'])}; {entry['tasks']} task(s))")
     # strict: a non-zero exit, which the onComplete handler reports as an error. MISSING and
     # INSTALLED_MISMATCH can only be found here, after the tasks ran.
-    return 1 if tool_problems and check == "strict" else 0
+    blocking = [e for e in tool_problems if not e.get("waived")]
+    return 1 if blocking and check == "strict" else 0
 
 
 if __name__ == "__main__":
