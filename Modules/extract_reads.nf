@@ -81,8 +81,9 @@ process extractReads {
     # read sequences in the task log. Verified on samtools 1.21 with a synthetic BAM and
     # CRAM: `-o FILE` wrote 3 of 5 reads and leaked the other 2; naming neither -o nor -0
     # writes all 5 and leaks nothing. Same defect as pksProfiler F01.
-    # The locked env (conda_envs/lock/samtools_env) is samtools 1.22.1 / htslib 1.24; the routing is
-    # re-checked on exactly that build by cmpipeline/CHECK_ROUND2.sh (audit D11), and
+    # The locked env (conda_envs/lock/samtools_env) is samtools 1.24 / htslib 1.24; the routing is
+    # re-checked on exactly that build, for both the FLAG 4 and the AS < 30 branch, with BAM and CRAM, by
+    # audits/2026-10-26_toolbump/D11_samtools_1.24_routing.sh (audit D11; 4/4 PASS, 2026-10-26), and
     # tests/test_repo_hygiene.py fails if the lockfile's samtools moves without this line.
     # Stream every category to stdout and compress it, so nothing is routed away.
     # Primary records are counted in the SAME decode pass (tee into counting fifos), so the
