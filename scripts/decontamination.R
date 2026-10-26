@@ -132,7 +132,11 @@ option_list <- list(
   make_option("--min_library", type = "double", default = 1000),
   # A zero-total sample whose library size is unknown (no --library_table, or a missing row)
   # stops the run unless this is set (audit A07).
-  make_option("--allow_unknown_library", action = "store_true", default = FALSE)
+  make_option("--allow_unknown_library", action = "store_true", default = FALSE),
+  # June-Young's known-contaminant species (ref/known_contaminants.tsv). A FLAG only: listed taxa are
+  # marked in filter_report/contaminants_final and their per-sample read share is reported; nothing
+  # is removed because of the list.
+  make_option("--known_contaminants", type = "character", default = NULL)
 )
 
 args <- parse_args(OptionParser(option_list = option_list))
@@ -574,8 +578,24 @@ if (length(post_removal_zero_taxa) > 0L) {
   final_taxa <- rownames(final_counts)
 }
 
+# Known-contaminant flag (June-Young's list). Species rank only: the list names species, and a genus
+# is not a contaminant because one of its species is. Names match ignoring case and space/underscore.
+norm_species <- function(x) tolower(gsub("[ _]+", " ", trimws(sub(".*\\|?s__", "", x))))
+known_species <- character()
+if (!is.null(args$known_contaminants) && nzchar(args$known_contaminants)) {
+  if (!file.exists(args$known_contaminants)) stopf("--known_contaminants not found: %s", args$known_contaminants)
+  kc <- read.delim(args$known_contaminants, comment.char = "#", stringsAsFactors = FALSE, check.names = FALSE)
+  if (!"species" %in% names(kc)) stopf("--known_contaminants needs a `species` column: %s", args$known_contaminants)
+  known_species <- unique(norm_species(kc$species[nzchar(kc$species)]))
+}
+flag_known <- args$taxonomic_rank == "species" && length(known_species) > 0L
+is_known <- if (flag_known) norm_species(taxon_ids) %in% known_species else rep(NA, length(taxon_ids))
+names(is_known) <- taxon_ids
+contaminants_final$known_contaminant <- unname(is_known[contaminants_final$taxon_id])
+
 filter_report <- data.frame(
   taxon_id = taxon_ids,
+  known_contaminant = unname(is_known),
   initial_sum = initial_taxon_sums,
   initial_presence = initial_taxon_presence,
   after_abundance_sum = filtered_taxon_sums,
@@ -654,6 +674,16 @@ for (i in seq_len(nrow(sample_validation))) {
 
 # Which included samples were all-zero in the input table (kept as absence evidence).
 sample_validation$zero_total_input <- sample_validation$sample_id %in% zero_total_samples
+# Share of each sample's input reads (before any filter) on June-Young's list: the per-sample
+# reagent-contamination check (Ludmil, check 16). NA at genus rank or without a list.
+known_reads <- if (flag_known) colSums(count_matrix[is_known, , drop = FALSE]) else NULL
+input_reads <- colSums(count_matrix)
+col_of <- match(sample_validation$sample_id, colnames(count_matrix))
+sample_validation$known_contaminant_reads <- if (flag_known) unname(known_reads[col_of]) else NA
+sample_validation$pct_known_contaminant <- if (flag_known) {
+  ifelse(!is.na(col_of) & input_reads[col_of] > 0,
+         sprintf("%.2f", 100 * known_reads[col_of] / input_reads[col_of]), NA)
+} else NA
 
 output_files <- c(
   decontaminated = sprintf("%s.decontam_pkg_decontaminated.csv", args$prefix),
@@ -701,6 +731,11 @@ tryCatch({
                                contaminants_by_batch$batch, sum)
   barplot(detected_per_batch, col = "#C8902F", xlab = "Eligible batch",
           ylab = "Contaminant calls", main = "Per-batch contaminant calls")
+  pk <- suppressWarnings(as.numeric(sample_validation$pct_known_contaminant))
+  if (flag_known && any(!is.na(pk))) {
+    hist(pk, breaks = 20, col = "#7A6A9E", xlab = "% of sample reads on the known-contaminant list",
+         ylab = "Samples", main = "Known-contaminant share per sample (June-Young's list)")
+  }
 }, finally = {
   grDevices::dev.off()
 })
@@ -728,6 +763,11 @@ summary_lines <- c(
   sprintf("Analysis status: %s", analysis_status),
   sprintf("Callable taxa: %d / %d", sum(contaminants_final$callable), nrow(contaminants_final)),
   sprintf("Final contaminants: %d", length(final_contaminants)),
+  if (flag_known) sprintf("Known-contaminant list: %d species; %d in the input table, %d of them called contaminant by decontam; median %s%% of sample reads",
+                          length(known_species), sum(is_known), sum(is_known[final_contaminants]),
+                          format(round(stats::median(as.numeric(sample_validation$pct_known_contaminant), na.rm = TRUE), 2)))
+  else sprintf("Known-contaminant list: not applied (%s)",
+               if (length(known_species) == 0L) "no list given" else "genus rank"),
   sprintf("Final retained taxa: %d", nrow(final_counts))
 )
 writeLines(summary_lines, output_files[["summary"]])

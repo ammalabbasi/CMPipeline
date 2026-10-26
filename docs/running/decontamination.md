@@ -86,6 +86,7 @@ are absent, not a broken sample:
 |---|---|---|
 | `--decontam_zero_total_policy` | `keep` | `keep`: an all-zero sample stays in the prevalence test, as long as its library was not empty. `drop`: every all-zero sample is excluded (the older behaviour, which could remove a batch's controls) |
 | `--decontam_min_library` | `1000` | under `keep`, an all-zero sample whose total Bracken library is below this is excluded as `insufficient_library` |
+| `--known_contaminants` | `ref/known_contaminants.tsv` | June-Young's 95 known-contaminant species, a **flag only** (species rank): `known_contaminant` in `filter_report.tsv` / `contaminants_final.tsv`, and `known_contaminant_reads` / `pct_known_contaminant` per sample in `sample_validation.tsv`. Nothing is removed because of it. `null` turns it off |
 | `--decontam_library_sizes` | none | the library-size table for `--start_from decontam`: pass the `bracken_library_sizes.tsv` that consensus wrote. In a full run it is supplied automatically |
 | `--decontam_allow_unknown_library` | `false` | an all-zero sample whose library size is unknown stops the run unless this is `true`, in which case it is kept |
 

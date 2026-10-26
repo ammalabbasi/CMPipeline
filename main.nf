@@ -257,6 +257,7 @@ params.batch_corr_method = "tune"  // ConQuR mode: "tune" (auto-phased Tune_ConQ
 
 params.scripts ="${projectDir}/scripts"
 params.decontam_script = "${projectDir}/scripts/decontamination.R"
+params.known_contaminants = "${projectDir}/ref/known_contaminants.tsv"  // June-Young's list: flag only; null = off
 params.batch_corr_script = "${projectDir}/scripts/2500703_batch_correction_normalization.r"
 
 // ============================================================================
@@ -1208,7 +1209,7 @@ workflow {
         } else {
             error "Decontamination needs classification output or --start_from decontam"
         }
-        Decontamination(ch_for_decontam, depsOf([params.decontam_script]))
+        Decontamination(ch_for_decontam, depsOf([params.decontam_script, params.known_contaminants].findAll()))
         qcParts << Decontamination.out.decontaminated.map { it[3] }
         if (params.start_from == 'beginning' || params.taxonomic_rank == 'species') {
             aggregateDecontaminatedSpecies(Decontamination.out.for_batch_correction,

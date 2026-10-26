@@ -8,6 +8,7 @@ evidence of absence unless their library was empty upstream.
 Static checks only (no R needed); the behavioural test is test_zero_total_behaviour, which
 runs the R script when a decontam environment is available and is skipped otherwise.
 """
+import csv
 import os, shutil, subprocess, tempfile, unittest, glob
 from pathlib import Path
 
@@ -84,11 +85,11 @@ class ZeroTotalBehaviour(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir)
 
-    def run_r(self, *extra):
+    def run_r(self, *extra, rank="genus"):
         cmd = [_decontam_rscript(), str(ROOT / "scripts" / "decontamination.R"),
                "--otu_table", "otu.tsv", "--metadata", "meta.tsv", "--prefix", "t",
                "--start_mode", "decontam", "--environment_spec", str(ROOT / "conda_envs" / "decontam_env.yml"),
-               "--nextflow_version", "test", "--taxon_column", "clade_name", "--taxonomic_rank", "genus",
+               "--nextflow_version", "test", "--taxon_column", "clade_name", "--taxonomic_rank", rank,
                "--sample_id_column", "patient", "--batch_column", "shipment_batch",
                "--type_column", "sample_type", "--control_role", "surrogate_biological",
                "--positive_values", "Tumor", "--control_values", "Normal",
@@ -112,6 +113,39 @@ class ZeroTotalBehaviour(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         rows = [l.rstrip("\n").split("\t") for l in open(f"{self.dir}/t.contaminants_by_batch.tsv")]
         self.assertIn(label, {row[0] for row in rows[1:]})
+
+    def test_known_contaminant_list_flags_only(self):
+        """June-Young's list (ref/known_contaminants.tsv): flagged and shared out per sample, never removed."""
+        names = ["Pseudomonas_putida", "Fusobacterium_nucleatum", "Ralstonia pickettii", "Bacteroides_fragilis",
+                 "Escherichia_coli", "Shigella_flexneri"]
+        text = open(f"{self.dir}/otu.tsv").read()
+        for j, n in enumerate(names):
+            text = text.replace(f"g__G{j}\t", f"d__Bacteria|g__{n.split()[0].split('_')[0]}|s__{n}\t")
+        with open(f"{self.dir}/otu.tsv", "w") as f:
+            f.write(text)
+        kc = str(ROOT / "ref" / "known_contaminants.tsv")
+        r = self.run_r("--known_contaminants", kc, rank="species")
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        rep = {row["taxon_id"].rsplit("s__", 1)[-1]: row for row in
+               csv.DictReader(open(f"{self.dir}/t.filter_report.tsv"), delimiter="\t")}
+        flagged = {n for n, row in rep.items() if row["known_contaminant"] == "TRUE"}
+        self.assertEqual(flagged, {"Pseudomonas_putida", "Ralstonia pickettii", "Shigella_flexneri"})
+        before = {row["taxon_id"] for row in csv.DictReader(open(f"{self.dir}/t.filter_report.tsv"), delimiter="\t")
+                  if row["final_action"] != "remove"}
+        with open(f"{self.dir}/t.decontam_pkg_decontaminated.csv") as f:
+            kept = {row[0] for row in csv.reader(f)} - {"clade_name"}
+        self.assertEqual(kept, before)                     # the flag removed nothing on its own
+        sv = list(csv.DictReader(open(f"{self.dir}/t.sample_validation.tsv"), delimiter="\t"))
+        s7 = next(x for x in sv if x["sample_id"] == "S7")
+        self.assertNotEqual(s7["pct_known_contaminant"], "")
+        self.assertIn("Known-contaminant list: 95 species; 3 in the input table",
+                      open(f"{self.dir}/t.decontamination_summary.txt").read())
+
+    def test_known_contaminant_list_not_applied_at_genus_rank(self):
+        r = self.run_r("--known_contaminants", str(ROOT / "ref" / "known_contaminants.tsv"))
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertIn("Known-contaminant list: not applied (genus rank)",
+                      open(f"{self.dir}/t.decontamination_summary.txt").read())
 
     def test_keep_retains_zero_controls(self):
         r = self.run_r()

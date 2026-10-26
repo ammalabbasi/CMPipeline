@@ -52,6 +52,7 @@ process Decontamination {
     script:
     def library_arg = library_sizes ? "--library_table \"${library_sizes}\"" : ""
     def unknown_arg = params.decontam_allow_unknown_library.toString() == 'true' ? "--allow_unknown_library" : ""
+    def known_arg = params.known_contaminants ? "--known_contaminants \"${params.known_contaminants}\"" : ""
     """
     set -euo pipefail
     ${ToolVersions.record(task, params, 'Rscript:r-base')}
@@ -80,7 +81,7 @@ process Decontamination {
         --min_control_per_batch "${params.min_control_per_batch}" \\
         --zero_total_policy "${params.decontam_zero_total_policy}" \\
         --unevaluable_policy "${params.decontam_unevaluable_policy}" \\
-        --min_library ${params.decontam_min_library} ${unknown_arg} ${library_arg}
+        --min_library ${params.decontam_min_library} ${unknown_arg} ${library_arg} ${known_arg}
     """
 }
 

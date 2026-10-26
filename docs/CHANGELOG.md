@@ -4,6 +4,14 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **June-Young's known-contaminant list is back, as a flag (`--known_contaminants`, `ref/known_contaminants.tsv`).**
+  His decontam script carried 95 species (`blacklist_species`; mostly reagent genera such as *Acinetobacter*,
+  *Methylobacterium*, *Sphingomonas*, *Ralstonia*) and used them to label plots. The 24 Sep rewrite of
+  `decontamination.R` dropped it. It is restored verbatim and, at species rank, flags listed taxa
+  (`known_contaminant`) and reports each sample's share of reads on the list (`pct_known_contaminant`,
+  Ludmil's reagent check). It removes nothing; decontam's calls are unchanged. His script also removed
+  *Homo sapiens* and PhiX before decontam; that is not restored here (see the Bracken-totals decision).
+
 - **Validation reference is ANI-curated; new `validated_group` status (decision 36).** Genomes RefSeq filed
   under the wrong species move to the species they belong to (4 *Fusobacterium* "nucleatum" genomes are
   *animalis*/*vincentii*; 4 *Bacteroides* and 4 *Escherichia* `sp.` genomes are named species). Species
