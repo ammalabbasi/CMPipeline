@@ -116,9 +116,7 @@ class RecordScript(unittest.TestCase):
         self.assertEqual({t: r["status"] for t, r in rows.items()},
                          {"minimap2": "ok", "samtools": "ok", "bgzip": "ok"})
         self.assertEqual(rows["minimap2"]["version"], "2.28")
-        # Expected pin comes from the env spec, so a tool update (2.28 -> 2.31, 2026-10-26) needs no test edit.
-        spec = (REPO / "conda_envs" / "minimap2_env.yml").read_text()
-        self.assertEqual(rows["minimap2"]["pinned"], re.search(r"minimap2=([\d.]+)", spec).group(1))
+        self.assertEqual(rows["minimap2"]["pinned"], "2.28")      # synthetic lockfile (self.lock), not the repo's
         self.assertEqual(rows["bgzip"]["package"], "htslib")
         self.assertEqual(rows["bgzip"]["pinned"], "1.24")
         self.assertEqual(rows["minimap2"]["path"], str(self.prefix / "bin" / "minimap2"))
