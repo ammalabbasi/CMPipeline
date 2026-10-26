@@ -1,0 +1,42 @@
+# Database manifest (audit X14; ported from pksProfiler c08098d conf/databases.tsv).
+#
+# The reference databases and indexes CMPipeline reads, frozen with a release label and a cheap
+# fingerprint. scripts/database_versions.py recomputes the fingerprint at the end of every run for
+# the databases that run used (finalize_provenance.py), compares it with this file, and writes the
+# verdict (frozen / CHANGED: listing / CHANGED: key / not_in_manifest / unused) to RUN_REPORT.txt
+# (DATABASE VERSIONS) and the provenance JSON (`databases`). A rebuilt or substituted database is
+# then visible in the run's own record instead of hiding behind an unchanged path. Checked by
+# tests/test_database_versions.py. A record, not a gate: a CHANGED database does not stop a run.
+#
+# COLUMNS
+#   name / param / stage  the record row, the pipeline parameter holding its path, the stage that
+#                  reads it (a run that does not request the stage records `unused`).
+#                  bracken_kmer_distrib is a view of --kraken_db (Bracken has no database of its own)
+#   release        the version label, as documented under `source` (not inferred from a directory name
+#                  alone: a directory can be renamed or a new release dropped into the old one)
+#   select         which files of the directory the row covers (glob on the relative path; * = all)
+#   size_bytes, file_count, newest_mtime   as measured on TSCC on frozen_on
+#   fingerprint    sha256:listing = sha256 over sorted "<relative path>\t<size>\n" lines of every regular
+#                  file (one line for a single file). Identical to pksProfiler's method: the frozen
+#                  values for kraken_db, hg38_db and t2t_phix_db equal pksProfiler's (recomputed here)
+#   key_method / key_files / key_sha256    the content check, recomputed every run:
+#                  sha256:files = sha256 over sorted "<name>\t<sha256 of content>\n" of the key files;
+#                  mmi:dictionary = sha256 of the .mmi header + sequence dictionary (first kB). Empty
+#                  for databases with no small release-defining file (ChocoPhlAn, UniRef, pangenome)
+#   newest_mtime   compared, but NOT identity: a copy or restore rewrites mtimes; reported as a note
+#
+# Not hashed per run: database.kdb (574 GB), the Bowtie2/DIAMOND indexes, the .mmi minimizer buckets.
+# The integrity check for those is `sha256sum <file>`, run deliberately (hours of Lustre reads).
+#
+# To re-freeze after a deliberate database change (fingerprint columns; edit release/source by hand):
+#   python3 scripts/database_versions.py freeze kraken_db=<path> ...
+#
+name	param	stage	database	release	path	select	size_bytes	file_count	fingerprint_method	fingerprint	newest_mtime	key_method	key_files	key_sha256	frozen_on	source
+hg38_db	hg38_db	host_depletion	minimap2 index (-x sr; k=21 w=11 b=14), GRCh38.p14 RefSeq full assembly GCF_000001405.40: 705 sequences / 3298430636 bp incl. ALT and patch scaffolds; no hs38d1 decoys, no chrEBV, no HLA contigs, no phiX	GRCh38.p14 / GCF_000001405.40 (index built 2025-01-19; no build log survives)	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/human-GRC-db.mmi	*	9147467965	1	sha256:listing	92b1f812752bfe3097d302c0336cbb31135db729ab2361be5b30474fb43ab758	2025-01-19T20:36:16+00:00	mmi:dictionary		a06386dc8b08f9547f6cbb80afab223f92161093e1355b367a59166054a010c9	2026-10-26	built in-house 2025-01-19, command not recorded; reconstruction: minimap2 -x sr -d human-GRC-db.mmi GCF_000001405.40_GRCh38.p14_genomic.fna. Index contents and key from pksProfiler docs/host_depletion_references.md + conf/databases.tsv (2026-10-22)
+t2t_phix_db	t2t_phix_db	host_depletion	minimap2 index (-x sr; k=21 w=11 b=14), T2T-CHM13v2.0 GCA_009914755.4: 25 sequences / 3117292070 bp. CONTAINS NO phiX despite the file and parameter name (docs/host_depletion_references.md)	T2T-CHM13v2.0 / GCA_009914755.4 (index built 2025-01-19; no build log survives)	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/human-GCA-phix-db.mmi	*	8933629875	1	sha256:listing	8e2257962675aad5ef92adff8890084e51c77bc8e55e8b11b800d74ac3bfb196	2025-01-19T20:37:40+00:00	mmi:dictionary		ba0747e8d82f8be009b6494ee952e0497fb4c263e373b2d151449e4271b6a6f3	2026-10-26	built in-house 2025-01-19, command not recorded; reconstruction: minimap2 -x sr -d human-GCA-phix-db.mmi GCA_009914755.4_T2T-CHM13v2.0_genomic.fna. Index contents and key from pksProfiler docs/host_depletion_references.md + conf/databases.tsv (2026-10-22)
+pangenome_db	pangenome_db	pangenome_depletion	directory of minimap2 indexes of HPRC year-1 assemblies (HG002 ... maternal/paternal f1 v2 GenBank); optional, off by default	HPRC year-1 f1_assembly_v2 GenBank (indexes built 2025-01-19)	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/pangenome_mmi	*	689651565099	94	sha256:listing	aede47733f546bc1dabf70c1f19b97c81efd8c18e1c857adc4cfcffa99cdc7a9	2025-01-19T21:12:15+00:00				2026-10-26	built in-house 2025-01-19 from HPRC assemblies; command not recorded
+kraken_db	kraken_db	classification	KrakenUniq microbial database (database.kdb 574 GB + idx, taxDB, seqid2taxid.map, Bracken kmer_distrib 50-300)	kuniq_microbialdb 2023-08-08 (no release marker in the download; the date is the upstream build date and the directory name)	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/krakenUniq_8_8_2023	*	583520923128	15	sha256:listing	fe43219f1104801e2a7e47a47209384def3fb312ef4e8a147c603c9135c9a8a6	2025-01-21T20:04:16+00:00	sha256:files	taxDB,ktaxonomy.tsv,database.kdb.counts	0e9d1a1bd9d2f60c9943a1d1bff0eaf12f49aae0e567cc278d69ebb9408465cc	2026-10-26	https://benlangmead.github.io/aws-indexes/k2 (kuniq_microbialdb_minus_kdb.20230808 + database.kdb)
+bracken_kmer_distrib	kraken_db	classification	Bracken read-length models: database<N>mers.kmer_distrib inside --kraken_db (N = 50, 75, 100, 125, 150, 200, 250, 300); --bracken_read_length picks one per sample	kmer distributions shipped with kuniq_microbialdb 2023-08-08	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/krakenUniq_8_8_2023	database*mers.kmer_distrib	22260420	8	sha256:listing	a78f4c5d557c69f60e514f0b265742ca4a43d2721aa31c8f3e4993eea1dfdb42	2025-01-21T19:50:48+00:00	sha256:files	database*mers.kmer_distrib	879e3f6217d2a48fde661258c89f8332df4c457cbb29bd857ef72b3eef565cdc	2026-10-26	as kraken_db
+metaphlan_db	metaphlan_db	classification	MetaPhlAn 4 Bowtie2 database (--metaphlan_index mpa_vJun23_CHOCOPhlAnSGB_202307)	mpa_vJun23_CHOCOPhlAnSGB_202307	/tscc/projects/ps-lalexandrov/shared/CMPipeline_nextflow/dbs/metaphlan	*	23969563430	10	sha256:listing	32f8a91b30b805aea1bbaec8b83e7333c170a54106791f6dbe2bfaec5446b42d	2025-01-26T19:32:01+00:00	sha256:files	mpa_latest,mpa_vJun23_CHOCOPhlAnSGB_202307.pkl,mpa_vJun23_CHOCOPhlAnSGB_202307_VINFO.csv	39d51de203c1dfbb280f96a22affca54e0f4f9f5c36be9aa5fe4515fdaa46d00	2026-10-26	metaphlan --install (downloaded 2025-01-26)
+humann3_nucleotide_db	humann3_nucleotide_db	humann3	HUMAnN 3 ChocoPhlAn pangenome database (per-species .ffn.gz, plus the download tarball)	ChocoPhlAn v201901_v31	/tscc/lustre/restricted/alexandrov-ddn/users/amabbasi/microbiome/databases/humann3/chocophlan_v201901_v31/	*	32999992282	12775	sha256:listing	ce942f53693d80c037936da0228f33a1c752afd2ada1975e0defa07221f85e83	2026-09-24T00:18:39+00:00				2026-10-26	humann_databases --download chocophlan full (re-extracted 2026-09-23)
+humann3_protein_db	humann3_protein_db	humann3	HUMAnN 3 UniRef90 DIAMOND database (uniref90_201901b_full.dmnd, plus the download tarball)	UniRef90 v201901b	/tscc/lustre/restricted/alexandrov-ddn/users/amabbasi/microbiome/databases/humann3/uniref/	*	56911920685	2	sha256:listing	1fa29ececf570ef740a2b6be765d2c0acff3d56b7ac35ebe42e8b4b6fb4767f2	2021-03-19T23:43:05+00:00				2026-10-26	humann_databases --download uniref uniref90_diamond

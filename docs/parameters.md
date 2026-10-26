@@ -75,6 +75,8 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--cram_reference` | `null` | optional matching FASTA for CRAM decoding |
 | `--host_depletion_frag` | `no` | `no` \| `auto`. `no` passes `--frag=no` to every short-read minimap2 alignment (host depletion and alignment validation), so each read is depleted on its own and BAM/CRAM and paired FASTQ input give the same result. `auto` keeps minimap2's sr fragment mode, where adjacent mates are depleted as a pair (the behaviour before 2026-10-06; BAM/CRAM input then removes more human-like reads than FASTQ). Microbial reads were identical in both modes on the real indexes |
 | `--extract_low_score_mapped` | `auto` | `auto` \| `on` \| `off`. BAM/CRAM only: also extract PRIMARY mapped records with `AS:i` < 30, the reads a default `bwa mem` (`-T 30`) would have left unmapped. `auto` is on only when the input's `@PG` runs `bwa mem` / `bwa-mem2 mem` with `-T` < 30 (GDC TCGA BAMs: `-T 0`); off for STAR, minimap2, `bwa aln`, `bwa mem` at the default `-T`, or no `@PG`. Decided per sample and recorded in the QC summary. See [running/classification.md](running/classification.md#low-score-mapped-reads-tcga-gdc-bams) |
+| `--qc_floor_action` | `exclude` | `exclude` \| `flag`. What happens to a sample the QC floor marks NOT ASSESSABLE: a BAM/CRAM with no FLAG 4 record, one whose `@PG` chain shows its unmapped reads were filtered upstream (`samtools view -F 4`, `-f 2`, `-q` > 0, a region; a sambamba filter), or one below `--min_reads_after_depletion`. `exclude` stops it at that point, so it enters no cohort table; `flag` profiles it anyway. Either way the QC summary records `terminal_state` `not_assessable_<reason>` and `RUN_REPORT.txt` counts them: never a microbial negative |
+| `--min_reads_after_depletion` | `0` | Minimum host-depleted reads for a sample to be assessable; `0` (default) turns this floor off. No calibrated value exists yet (depth-stratified detection power, review #44); set one only for a stated reason. FASTQ and BAM/CRAM alike |
 | `--outdir` | `RESULTS/` in the launch directory | where every stage publishes (see *Outputs*) |
 | `--unmapped_bam_dir` | ``--outdir`/UNMAPPED_BAM` | where `UNMAPPED_BAM/` is published; defaults to `UNMAPPED_BAM` under `--outdir` |
 | `--mapped_reads_dir` | ``--outdir`/MAPPED_READS` | where `MAPPED_READS/` is published; defaults to `MAPPED_READS` under `--outdir` |
@@ -113,8 +115,8 @@ Paths and values are validated before the first task runs. The run-mode guides i
 
 | Parameter | Default | Description |
 |---|---|---|
-| `--hg38_db` | `null` | Set in a site profile or with --hg38_db |
-| `--t2t_phix_db` | `null` | Set in a site profile or with --t2t_phix_db |
+| `--hg38_db` | `null` | First host-depletion index: GRCh38.p14 RefSeq full assembly on TSCC (no decoys, EBV or HLA contigs). Set in a site profile or with --hg38_db |
+| `--t2t_phix_db` | `null` | Second host-depletion index, T2T-CHM13v2.0. Despite the name it contains **no phiX** ([host_depletion_references.md](host_depletion_references.md)); the name is kept for compatibility. Set in a site profile or with --t2t_phix_db |
 | `--pangenome_db` | `null` | optional .mmi file or directory containing .mmi files |
 | `--kraken_db` | `null` | Set in a site profile or with --kraken_db |
 | `--metaphlan_db` | `null` | Set in a site profile or with --metaphlan_db |

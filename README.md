@@ -11,8 +11,9 @@ remove reagent contaminants, correct batch effects and profile function with HUM
 
 1. **Read preparation** extracts every primary unmapped read from BAM/CRAM input (or takes single- or
    paired-end FASTQ) and filters the reads with fastp.
-2. **Host depletion** removes reads matching the GRCh38 and T2T-CHM13+PhiX minimap2 indexes, and
-   optionally a set of pangenome indexes.
+2. **Host depletion** removes reads matching the GRCh38 and T2T-CHM13 minimap2 indexes, and
+   optionally a set of pangenome indexes. The T2T index (`--t2t_phix_db`) contains **no phiX** despite
+   its name, so phiX spike-in is not removed ([host_depletion_references.md](docs/host_depletion_references.md)).
 3. **Classification** runs KrakenUniq and Bracken on every sample, and MetaPhlAn 4 on samples with at
    least `--consensus_min_reads` (100,000) classified reads.
 4. **Consensus** keeps the genera both profilers detect and applies that list to every sample's Bracken
@@ -47,7 +48,7 @@ cd CMPipeline
 | Database | Parameter | Needed for |
 |---|---|---|
 | GRCh38 minimap2 index | `--hg38_db` | host depletion |
-| T2T-CHM13 + PhiX minimap2 index | `--t2t_phix_db` | host depletion |
+| T2T-CHM13 minimap2 index (no phiX despite the name; see docs/host_depletion_references.md) | `--t2t_phix_db` | host depletion |
 | HPRC pangenome `.mmi` (one file or a directory) | `--pangenome_db` | optional extra host depletion |
 | KrakenUniq/Bracken database | `--kraken_db` | classification; must contain `database<N>mers.kmer_distrib` files (one per read length; `--bracken_read_length auto` picks per sample) |
 | MetaPhlAn 4 database (vJun23) | `--metaphlan_db` | classification |
@@ -178,7 +179,7 @@ Under `--outdir`; each folder can be moved with its own parameter.
 | `04_DECONTAMINATION/` | the decontaminated table, contaminant calls, per-sample roles |
 | `05_BATCH_CORRECTION/` | corrected tables, PERMANOVA summary, correction status |
 | `HUMANN3/` | gene families and pathways |
-| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 51 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 64 columns) and `cmp_cohort_report.html` |
 
 Run records (`trace.txt`, `report.html`, `RUN_REPORT.txt`, `provenance/`) go to `pipeline_info/` in the
 launch directory. Details: [Outputs](docs/outputs.md).

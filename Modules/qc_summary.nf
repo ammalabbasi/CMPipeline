@@ -38,6 +38,7 @@ process qcSummary {
         --inputs . \\
         --output cmp.qc.summary.tsv \\
         --min-reads "${params.consensus_min_reads}" \\
+        --min-reads-after-depletion "${params.min_reads_after_depletion}" \\
         --stages "${stages}"
     """
 }

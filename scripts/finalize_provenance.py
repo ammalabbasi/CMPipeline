@@ -668,6 +668,125 @@ def low_score_rescue_summary(params: dict) -> dict | None:
     }
 
 
+# ------------------------------------------------------ input alignments (X13 / E3)
+
+
+def _qc_rows(params: dict) -> list[dict] | None:
+    root = params.get("qc_summary_dir")
+    if not root or root in {"null", "None"}:
+        return None
+    path = Path(root) / "cmp.qc.summary.tsv"
+    if not path.is_file():
+        return None
+    with path.open() as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def input_alignments_summary(params: dict) -> dict | None:
+    """Cohort view of the BAM/CRAM input provenance (scripts/header_provenance.py columns of the
+    QC summary): how many inputs per reference fingerprint, per aligner configuration, per @PG
+    chain and per upstream unmapped filter. Counts only -- no sample ID, path or read group."""
+    rows = [r for r in (_qc_rows(params) or [])
+            if r.get("input_ref_fingerprint") not in (None, "", "NA")]
+    if not rows:
+        return None
+
+    def tally(key):
+        out: dict[str, int] = defaultdict(int)
+        for r in rows:
+            out[key(r)] += 1
+        return dict(sorted(out.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    def value(r, column):
+        return r.get(column) or "NA"
+
+    def reference(r):
+        return (f"{value(r, 'input_ref_fingerprint')[:12]} {value(r, 'input_ref_build')}, "
+                f"{value(r, 'input_ref_contigs')} contigs (ALT {value(r, 'input_ref_alt_contigs')}, "
+                f"decoy {value(r, 'input_ref_decoy_contigs')}, HLA {value(r, 'input_ref_hla_contigs')}, "
+                f"viral {value(r, 'input_ref_viral_contigs')}, chrEBV {value(r, 'input_ref_has_ebv')})")
+
+    def aligner(r):
+        name = f"{value(r, 'upstream_aligner')} {value(r, 'upstream_aligner_version')}"
+        options = r.get("input_bwa_options")
+        return f"{name} {options}" if options not in (None, "", "NA") else name
+
+    return {
+        "inputs": len(rows),
+        "references": tally(reference),
+        "aligners": tally(aligner),
+        "pg_chains": tally(lambda r: value(r, "input_pg_chain")),
+        "unmapped_filter": tally(lambda r: value(r, "input_unmapped_filter")),
+    }
+
+
+def render_input_alignments(summary: dict | None) -> list[str]:
+    if not summary:
+        return []
+    refs, aligners = summary["references"], summary["aligners"]
+    out = ["INPUT ALIGNMENTS (BAM/CRAM headers; per sample: QC_SUMMARY input_* columns)",
+           f"  {summary['inputs']} input(s): {len(refs)} reference fingerprint(s); "
+           f"{len(aligners)} aligner configuration(s)"]
+    out.append("  reference (md5 of @SQ SN:LN, first 12 hex)")
+    out += [f"    {n:>6}  {key}" for key, n in refs.items()]
+    out.append("  aligner (from @PG; bwa mem options reduced to letters and numbers)")
+    out += [f"    {n:>6}  {key}" for key, n in aligners.items()]
+    out.append("  @PG chain (program:version)")
+    out += [f"    {n:>6}  {key}" for key, n in summary["pg_chains"].items()]
+    out.append("  upstream unmapped filter")
+    out += [f"    {n:>6}  {key}" for key, n in summary["unmapped_filter"].items()]
+    if len(refs) > 1:
+        out.append("  *** more than one input reference: unmapped reads were defined against different")
+        out.append("      contig sets (decoy / viral / ALT), so extraction is not equivalent across inputs.")
+    out.append("")
+    return out
+
+
+# ------------------------------------------------------------ database versions (X14)
+
+
+def _sibling(name: str):
+    """A helper module from scripts/, loaded by path (this file is also loaded by path in tests)."""
+    import importlib.util
+    path = Path(__file__).resolve().parent / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"cmp_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+DATABASE_PARAMS = ("hg38_db", "t2t_phix_db", "pangenome_db", "cram_reference", "kraken_db", "metaphlan_db",
+                   "humann3_nucleotide_db", "humann3_protein_db", "validation_ref", "validation_taxdb")
+
+
+def database_versions(params: dict, stages: list[str] | None, manifest: Path | None = None) -> dict:
+    """conf/databases.tsv compared with the databases this run used (scripts/database_versions.py).
+    Never raises: a provenance failure must not mask the run's own outcome."""
+    try:
+        dv = _sibling("database_versions")
+        paths = {name: params.get(name) for name in DATABASE_PARAMS}
+        paths = {k: (None if v in (None, "", "null", "None") else v) for k, v in paths.items()}
+        # The taxonomy DB alignment validation reads when no prebuilt reference is given (main.nf).
+        if not paths.get("validation_ref") and not paths.get("validation_taxdb") and paths.get("kraken_db"):
+            paths["validation_taxdb"] = f"{paths['kraken_db']}/taxDB"
+        summary = dv.record(paths, stages, manifest or dv.MANIFEST)
+        summary["refseq_snapshot"] = params.get("validation_refseq_snapshot") or None
+        return summary
+    except Exception as exc:   # noqa: BLE001 -- recorded, never fatal
+        return {"error": f"{type(exc).__name__}: {exc}", "rows": []}
+
+
+def render_database_versions(summary: dict | None) -> list[str]:
+    if not summary:
+        return []
+    if summary.get("error"):
+        return ["DATABASE VERSIONS", f"  could not be recorded: {summary['error']}", ""]
+    lines = _sibling("database_versions").render(summary)
+    if summary.get("refseq_snapshot") and lines:
+        lines.insert(-1, f"  {'validation RefSeq':<22}snapshot {summary['refseq_snapshot']} (--validation_refseq_snapshot)")
+    return lines
+
+
 # ------------------------------------------------------- sample outcomes (X05/X06)
 
 
@@ -697,6 +816,10 @@ def sample_outcomes(params: dict) -> dict | None:
         "samples": len(rows),
         "by_state": by_state,
         "failed": sum(n for state, n in by_state.items() if state.startswith("failed_at_")),
+        # QC floor (review #34): not microbial negatives; excluded from the cohort tables unless
+        # --qc_floor_action flag.
+        "not_assessable": sum(n for state, n in by_state.items() if state.startswith("not_assessable_")),
+        "qc_floor_action": params.get("qc_floor_action") or "exclude",
         "metaphlan_status": tally("metaphlan_status") if "metaphlan_status" in rows[0] else {},
         "humann_status": tally("humann_status") if "humann_status" in rows[0] else {},
     }
@@ -708,6 +831,13 @@ def render_sample_outcomes(outcomes: dict | None) -> list[str]:
     out = ["SAMPLE OUTCOMES (QC_SUMMARY/cmp.qc.summary.tsv, terminal_state)"]
     for state, n in outcomes["by_state"].items():
         out.append(f"  {n:>6}  {state}")
+    if outcomes.get("not_assessable"):
+        action = outcomes.get("qc_floor_action", "exclude")
+        out.append(f"  *** {outcomes['not_assessable']} sample(s) NOT ASSESSABLE (QC floor): no unmapped reads to")
+        out.append("      profile, unmapped reads filtered upstream, or too few reads after host depletion.")
+        out.append("      They are NOT microbial negatives. " + (
+            "--qc_floor_action exclude: they are in no cohort table." if action == "exclude" else
+            "--qc_floor_action flag: they WERE profiled and are in the cohort tables; drop them before analysis."))
     if outcomes["failed"]:
         out.append(f"  *** {outcomes['failed']} sample(s) failed at a per-sample stage: they are missing")
         out.append("      from the cohort tables because a task failed, not because they hold no microbes.")
@@ -794,6 +924,10 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
         add(f"  {name:<22}{digest}")
     add("")
 
+    # Which release each database was, and whether it is still the frozen one (X14).
+    for line in render_database_versions(record.get("databases")):
+        add(line)
+
     envs = (record.get("environment") or {}).get("conda_envs_used") or {}
     if envs:
         add("CONDA ENVS THIS RUN USED")
@@ -827,6 +961,9 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
             value = totals.get(column)
             add(f"  {column:<30}{'-' if value is None else value:>14}  ({totals.get(column + '_samples', 0)} samples)")
         add("")
+
+    for line in render_input_alignments((record.get("outputs") or {}).get("input_alignments")):
+        add(line)
 
     for line in render_sample_outcomes((record.get("outputs") or {}).get("sample_outcomes")):
         add(line)
@@ -906,9 +1043,15 @@ def main() -> int:
         "cohort_tables": output_checksums(launch_params),
         # --extract_low_score_mapped, aggregated over the BAM/CRAM inputs (counts only; L8).
         "low_score_rescue": low_score_rescue_summary(launch_params),
+        # BAM/CRAM header provenance: reference fingerprints, aligner chains (counts only; X13).
+        "input_alignments": input_alignments_summary(launch_params),
         # How each sample ended (terminal_state), counts only (audit X05/X06).
         "sample_outcomes": sample_outcomes(launch_params),
     }
+
+    # Database releases and fingerprints, compared with conf/databases.tsv (X14).
+    record["databases"] = database_versions(
+        launch_params, (record.get("invocation") or {}).get("stages_requested"))
 
     environment = record.setdefault("environment", {})
     envs = conda_envs(environment.get("conda_envs") or {}, launch_params.get("conqur_sha"))

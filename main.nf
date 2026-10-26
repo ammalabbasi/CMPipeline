@@ -139,6 +139,14 @@ params.cram_reference = null      // optional matching FASTA for CRAM decoding
 // auto = on only when the input's @PG runs bwa mem / bwa-mem2 mem with -T < 30; off for STAR, minimap2,
 // bwa aln, bwa mem at the default -T, or no @PG. Decided and recorded per sample (QC summary).
 params.extract_low_score_mapped = "auto"   // auto | on | off
+// QC floor (pksProfiler COHORT_CHECKS A3; port review #34). A sample is NOT ASSESSABLE -- never a
+// microbial negative -- when its BAM/CRAM has no FLAG 4 record, when the input's @PG chain shows its
+// unmapped reads were filtered upstream (samtools view -F 4 / -f 2 / -q / a region; sambamba filter),
+// or when fewer than --min_reads_after_depletion reads survive host depletion. QC summary terminal_state
+// not_assessable_<reason>. exclude (default): the sample stops at that point and enters no cohort table;
+// flag: it carries on, and only the QC summary / RUN_REPORT mark it.
+params.qc_floor_action = "exclude"          // exclude | flag
+params.min_reads_after_depletion = 0        // 0 = off. No calibrated value exists yet (review #34/#44)
 
 // Output directories. Everything publishes under --outdir, which defaults to RESULTS/ in
 // the directory the run was launched from, next to that run's work/ and pipeline_info/.
@@ -403,6 +411,10 @@ workflow {
     if (!(params.host_depletion_frag instanceof CharSequence) || !(params.host_depletion_frag.toString() in ['no', 'auto'])) {
         error "--host_depletion_frag must be no or auto (got '${params.host_depletion_frag}')"
     }
+    def qcFloorProblem = QcFloor.problem(params)   // QC floor (review #34; lib/QcFloor.groovy)
+    if (qcFloorProblem) error qcFloorProblem
+    def qcFloorAction = params.qc_floor_action.toString()
+    def minReadsAfterDepletion = params.min_reads_after_depletion.toString().toLong()
 
     if (params.start_from == 'beginning' && !skipHostDepletion) {
         requirePathParam('hg38_db', params.hg38_db, 'for host depletion')
@@ -804,10 +816,19 @@ workflow {
             }.set { INPUTS_BY_TYPE }
 
             extractReads(INPUTS_BY_TYPE.alignment.map { sampleID, inputType, inputs, references -> tuple(sampleID, inputType, inputs[0], references) },
-                         depsOf(["${params.scripts}/validate_cram_reference.py", "${params.scripts}/low_score_rescue.py"], [params.cram_reference]))
-            extractReads.out.reads.set { EXTRACTED_READS }
+                         depsOf(["${params.scripts}/validate_cram_reference.py", "${params.scripts}/low_score_rescue.py", "${params.scripts}/header_provenance.py"], [params.cram_reference]))
+            // QC floor: no FLAG 4 record / unmapped filtered upstream -> not assessable, stops here (exclude)
+            extractReads.out.reads.join(extractReads.out.floor)
+                .branch { id, reads, floor ->
+                    keep: QcFloor.keepExtracted(floor, qcFloorAction)
+                    drop: true
+                }
+                .set { EXTRACTED_BY_FLOOR }
+            EXTRACTED_BY_FLOOR.drop.subscribe { id, reads, floor -> log.warn "Sample ${id} NOT ASSESSABLE (${floor}): excluded; not a microbial negative" }
+            EXTRACTED_BY_FLOOR.keep.map { id, reads, floor -> tuple(id, reads) }.set { EXTRACTED_READS }
             qcParts << extractReads.out.counts   // *.extract_counts.tsv: BAM/CRAM library denominator (C07)
             qcParts << extractReads.out.aligner  // *.upstream_aligner.tsv: @PG aligner/-T and low-AS mode (L8)
+            qcParts << extractReads.out.provenance  // *.input_provenance.tsv: @SQ fingerprint, @PG chain (X13)
             // `pretrimmed` marks reads that came out of an aligned BAM/CRAM: whoever
             // produced the alignment adapter-trimmed them before aligning.
             INPUTS_BY_TYPE.fastq
@@ -871,7 +892,18 @@ workflow {
             FASTQCHG38(MAPPED_READS_MULTI.Hg38)
             FASTQCT2T(MAPPED_READS_MULTI.T2T)
             FASTQCPANGENOME(MAPPED_READS_MULTI.PAN)
-            MAPPED_READS_MULTI.PAN.set { CLASSIFICATION_READS }
+            if (minReadsAfterDepletion > 0) {   // QC floor on depth: below it -> not assessable
+                MAPPED_READS_MULTI.PAN.join(mapReads.out.counts.map { QcFloor.depleted(it) })
+                    .branch { id, reads, n ->
+                        keep: QcFloor.keepDepleted(n, minReadsAfterDepletion, qcFloorAction)
+                        below: true
+                    }
+                    .set { DEPLETED_BY_FLOOR }
+                DEPLETED_BY_FLOOR.below.subscribe { id, reads, n -> log.warn "Sample ${id} NOT ASSESSABLE (${n} reads after host depletion): excluded; not a microbial negative" }
+                DEPLETED_BY_FLOOR.keep.map { id, reads, n -> tuple(id, reads) }.set { CLASSIFICATION_READS }
+            } else {
+                MAPPED_READS_MULTI.PAN.set { CLASSIFICATION_READS }
+            }
             LOW_AS_DEPLETED = extractReads.out.low_as_ids.join(MAPPED_READS_MULTI.PAN)
 
             // Cohort QC report. fastp's per-sample JSON carries reads in/out, duplication

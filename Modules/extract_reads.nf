@@ -26,9 +26,19 @@ process extractReads {
     // --extract_low_score_mapped: the upstream aligner, its version and bwa -T from @PG (never the
     // CL itself), and the mode this sample got and why. One row, metadata only.
     path("${sampleID}.upstream_aligner.tsv"), emit: aligner
+    // Input provenance (audit X13, Ludmil E3): @SQ fingerprint and contig classes (decoy / viral /
+    // HLA / ALT, chrEBV), the @PG chain as program:version, bwa mem options reduced to letters and
+    // numbers, and any upstream step that removed unmapped reads. From the same header text as the
+    // rescue decision; never the CL, a read group, a path or a sample barcode.
+    path("${sampleID}.input_provenance.tsv"), emit: provenance
     // Names of the rescued low-AS reads exactly as `samtools fastq -N` wrote them, so lowAsSurvival
     // can count them after host depletion and classification. Only when the rescue is on.
     tuple val(sampleID), path("${sampleID}.low_as_read_ids.txt.gz"), emit: low_as_ids, optional: true
+    // QC floor (pksProfiler COHORT_CHECKS A3): pass, or why this input cannot be assessed --
+    // unmapped_filtered_upstream (the @PG chain shows a step that removed unmapped reads) or
+    // no_unmapped_records (zero FLAG 4 records). main.nf stops such a sample here
+    // (--qc_floor_action exclude), so an empty profile is never reported as a microbial negative.
+    tuple val(sampleID), env('INPUT_QC_FLOOR'), emit: floor
 
     script:
     def reference = reference_files ? reference_files[0] : null
@@ -69,11 +79,15 @@ process extractReads {
     # the header's @PG runs bwa mem / bwa-mem2 mem with -T < 30; STAR, minimap2, bwa aln, bwa mem at
     # the default -T, or no @PG leave it off. Decided per sample from the header alone (the CL is
     # read in memory and never written; scripts/low_score_rescue.py). Ported from pksProfiler E1.
-    samtools view -H "${alignment}" > input.header.sam
+    # The header is read from the alignment ONCE: the same text also gives the input provenance row
+    # (--provenance; scripts/header_provenance.py, audit X13). --no-PG: samtools would otherwise add
+    # its own @PG for this header dump, and the pipeline's samtools would appear in the input's chain.
+    samtools view -H --no-PG "${alignment}" > input.header.sam
     LOW_AS="\$(python "${params.scripts}/low_score_rescue.py" decide \
         --header input.header.sam --sample "${sampleID}" \
         --mode "${params.extract_low_score_mapped}" \
-        --output "${sampleID}.upstream_aligner.tsv")"
+        --output "${sampleID}.upstream_aligner.tsv" \
+        --provenance "${sampleID}.input_provenance.tsv")"
     rm -f input.header.sam
 
     # `samtools fastq -N -o FILE` writes only READ1/READ2 to FILE and sends category-0
@@ -159,8 +173,23 @@ process extractReads {
         UNMAPPED_RECORDS="\$(< unmapped.count)"
         rm -f unmapped.fifo unmapped.count
     fi
-    printf 'sample\tlibrary_primary_records\textracted_unmapped_records\tlow_as_reads_extracted\tlow_as_no_as_records\n%s\t%s\t%s\t%s\t%s\n' \
-        "${sampleID}" "\$(< primary.count)" "\$UNMAPPED_RECORDS" "\$LOW_AS_READS" "\$NO_AS_RECORDS" > "${sampleID}.extract_counts.tsv"
+    # QC floor (pksProfiler COHORT_CHECKS A3; review #34). An input whose unmapped reads were removed
+    # before it reached us -- the @PG chain shows samtools view -F 4 / -f 2 / -q / a region, or a
+    # sambamba filter (input_unmapped_filter, scripts/header_provenance.py) -- or that has no FLAG 4
+    # record at all cannot be profiled: its empty or rescue-only profile would read as "no microbes".
+    # A real WGS/WES/RNA alignment always leaves some reads unmapped. Recorded here; main.nf acts on it.
+    UPSTREAM_FILTER="\$(awk -F '\\t' 'NR == 1 { for (i = 1; i <= NF; i++) if (\$i == "input_unmapped_filter") c = i } NR == 2 && c { print \$c }' "${sampleID}.input_provenance.tsv")"
+    INPUT_QC_FLOOR=pass
+    if [[ -n "\$UPSTREAM_FILTER" && "\$UPSTREAM_FILTER" != "none" ]]; then
+        INPUT_QC_FLOOR=unmapped_filtered_upstream
+    elif [[ "\$UNMAPPED_RECORDS" == 0 ]]; then
+        INPUT_QC_FLOOR=no_unmapped_records
+    fi
+    if [[ "\$INPUT_QC_FLOOR" != pass ]]; then
+        echo "extractReads: ${sampleID}: NOT ASSESSABLE (\$INPUT_QC_FLOOR; upstream filter: \${UPSTREAM_FILTER:-none}, FLAG 4 records: \$UNMAPPED_RECORDS)" >&2
+    fi
+    printf 'sample\tlibrary_primary_records\textracted_unmapped_records\tlow_as_reads_extracted\tlow_as_no_as_records\tinput_qc_floor\n%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "${sampleID}" "\$(< primary.count)" "\$UNMAPPED_RECORDS" "\$LOW_AS_READS" "\$NO_AS_RECORDS" "\$INPUT_QC_FLOOR" > "${sampleID}.extract_counts.tsv"
     rm -f primary.fifo primary.count
     gzip -t "\$READS"
     """

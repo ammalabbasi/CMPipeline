@@ -104,12 +104,80 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**phiX: the "T2T + PhiX" labels were wrong; the index holds no phiX** (port review #19). The second
+host-depletion index, `human-GCA-phix-db.mmi` (`--t2t_phix_db`), is T2T-CHM13v2.0 alone: 25 sequences,
+the published CHM13v2.0 total to the base (read from the index by pksProfiler, 2026-10-22). In the code,
+`scripts/download_references.sh` concatenates `ref/NC_001422.fna` into the index FASTA but never downloads
+it, and has no `set -e`. The cohort report said "Removed: T2T + PhiX" and the README "T2T-CHM13+PhiX".
+- Labels now say T2T-CHM13; `docs/host_depletion_references.md` documents both indexes, the mechanism, and
+  what it means: **phiX spike-in reads are not removed and count in KrakenUniq/Bracken totals and library
+  sizes**; viruses are dropped at consensus, so consensus and downstream tables carry no phiX taxon (with
+  `--skip_consensus`, the Bracken tables that go on to decontamination do).
+- Unchanged on purpose: the index, `--t2t_phix_db`, and the columns `reads_after_t2t_phix` /
+  `pct_removed_t2t_phix` (rebuilding mid-cohort would change depletion for samples already run). No
+  result changes.
+
+**QC floor: a sample that cannot be assessed is `not_assessable`, never a microbial negative**
+(pksProfiler COHORT_CHECKS A3, a proposal there; port review #34). A BAM/CRAM pre-filtered to mapped
+reads gives an empty profile that decontam and ConQuR would read as "no microbes" and that would sit in
+the low-biomass tail.
+- `extractReads` records `input_qc_floor` in `<sample>.extract_counts.tsv`: `unmapped_filtered_upstream`
+  when the input's `@PG` chain shows its unmapped reads were removed upstream (`input_unmapped_filter`:
+  `samtools view -F 4`, `-f 2`, `-q` > 0, a region; a sambamba filter), `no_unmapped_records` when the
+  BAM/CRAM has no FLAG 4 record (the low-score rescue does not lift this), else `pass`.
+- `--min_reads_after_depletion` (new, default `0` = off): fewer host-depleted reads than this is
+  `below_min_reads_after_depletion`. No calibrated value exists yet, so it is off.
+- `--qc_floor_action exclude|flag` (new, default `exclude`): `exclude` stops a not-assessable sample at
+  extraction (or before classification, for the depth floor), so it is in no cohort table; `flag` profiles
+  it and only marks it.
+- QC summary: `terminal_state` `not_assessable_<reason>`, `sample_status` `not_assessable`, new column
+  `qc_floor` (64 columns). `RUN_REPORT.txt` *SAMPLE OUTCOMES* states the count and that they are not
+  negatives; the cohort report adds a *Not assessable* tile.
+- **Changes which samples are reported, not any count**: a BAM/CRAM with zero unmapped records, or with
+  an upstream unmapped filter in its `@PG`, no longer reaches the cohort tables by default (zero-record
+  inputs were already dropped at fastp; filtered inputs with rescued low-AS reads were profiled before).
+- The channel helpers live in `lib/QcFloor.groovy`: with them inline, `main.nf`'s entry workflow
+  exceeded the 65,535-character string Nextflow 24.10's parser allows. `tests/test_repo_hygiene.py` now
+  checks that limit (review #38); the block is at ~64,700 characters, so new workflow logic belongs in `lib/`.
+
+**Input provenance for BAM/CRAM: reference fingerprint and aligner chain** (audit X13, Ludmil E3;
+pksProfiler `70cb629`). Nothing recorded which human build each BAM/CRAM was aligned to, or how, so a
+results tree mixing TCGA (GDC GRCh38.d1.vd1: hs38d1 decoys, chrEBV, ~200 viral contigs), Mutographs and
+Hartwig inputs could not say that their unmapped reads were defined against different contig sets.
+- `extractReads` writes `<sample>.input_provenance.tsv` from the header it already reads for the
+  low-score rescue decision (`low_score_rescue.py decide --provenance`, `scripts/header_provenance.py`):
+  the header is read once per sample.
+- Twelve QC summary columns (63 in all): `input_ref_fingerprint` (md5 of ordered `@SQ` SN:LN),
+  `input_ref_m5_fingerprint`, `input_ref_contigs`, `input_ref_build`, ALT / decoy / HLA / viral contig
+  counts, `input_ref_has_ebv`, `input_pg_chain` (program:version), `input_bwa_options` (letters and
+  numbers only, e.g. `-T 0`) and `input_unmapped_filter` (an upstream `samtools view -F 4`-type step).
+- `RUN_REPORT.txt` gains a counts-only *INPUT ALIGNMENTS* section (`outputs.input_alignments` in the
+  JSON): e.g. "50 input(s): 1 reference fingerprint(s); 1 aligner configuration(s)" and
+  "50  bwa 0.7.15-r1140 -T 0".
+- Never recorded: the `@PG` CL itself, `@RG` text, read-group/sample barcodes, paths. No result changes;
+  `extractReads` re-runs on `-resume` (its script and helper digests changed).
+
+**Database manifest: every run records which database releases it read** (audit X14; pksProfiler
+`c08098d`). A path is not a version: the KrakenUniq, MetaPhlAn, HUMAnN and host-index directories could
+be rebuilt in place and every run would print the same line.
+- `conf/databases.tsv` freezes `hg38_db`, `t2t_phix_db`, `pangenome_db`, `kraken_db`,
+  `bracken_kmer_distrib`, `metaphlan_db` and both HUMAnN databases: release label, path, size, file
+  count, newest mtime, a `sha256:listing` fingerprint (relative path + size of every file; identical to
+  pksProfiler's method and values for the shared KrakenUniq and host-index files) and a key check
+  (`sha256:files` of small release-defining files, or `mmi:dictionary` for minimap2 indexes).
+- `scripts/database_versions.py` recomputes them at the end of each run for the databases the requested
+  stages used; `RUN_REPORT.txt` gains *DATABASE VERSIONS* (release, fingerprint, `frozen` /
+  `CHANGED: listing` / `CHANGED: key` / `not_in_manifest` / `unused`) and the JSON record `databases`.
+  Reads metadata, a few small key files (largest: the 98 MB MetaPhlAn `.pkl`, 125 MB KrakenUniq
+  `taxDB`) and the first kB of each `.mmi`; a few seconds per run. A record, not a gate. No result changes.
+- The `t2t_phix_db` row states that the index contains no phiX (see the phiX entry above).
+
 **Per-sample failure policy: every sample ends in one reported state** (audit X05/X06; pksProfiler
 `dc5d703`, `e126439`).
 - Alignment validation batches only samples that are columns of the species table. Under
   `--sample_failure_strategy ignore`, a sample whose Bracken task failed was batched anyway, the scorer
   exited 1 on it, and the strict validation step ended the run; such a sample is now logged and skipped.
-- The QC summary gains `metaphlan_status`, `humann_status` and `terminal_state` (51 columns):
+- The QC summary gains `metaphlan_status`, `humann_status` and `terminal_state` (51 in all at that point):
   `completed_profiled` / `completed_no_call` / `completed`, `failed_at_<stage>` or `excluded_<reason>`.
   MetaPhlAn and HUMAnN failures, silent before, are named per sample. `main.nf` passes the requested
   stages (`--stages`), each sample's input type, and which HUMAnN profiles finished.
@@ -173,7 +241,7 @@ said so: `RUN_REPORT.txt` listed what the lockfiles specify.
 - Every path parameter is resolved and checked before the first task is submitted. A flag
   passed without a value (`--pangenome_db` on its own, which Groovy turns into the Boolean
   `true`) is named as such rather than reaching minimap2 hours later.
-- Required databases are checked per stage: GRCh38 and T2T+PhiX for host depletion,
+- Required databases are checked per stage: GRCh38 and T2T-CHM13 (`--t2t_phix_db`) for host depletion,
   KrakenUniq and MetaPhlAn for classification, both HUMAnN3 databases when it is enabled.
 
 **Speed and cost**

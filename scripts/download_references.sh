@@ -13,6 +13,10 @@ gunzip -q ref/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna.gz
 gunzip -q ref/GRCh38_latest_genomic.fna.gz
 
 echo 'decompressed files'
+# NOTE (CMPipeline, 2026-10-26): nothing above downloads ref/NC_001422.fna (phiX174), so this `cat`
+# writes the T2T FASTA alone and the index built from it holds no phiX -- which is what the TSCC
+# human-GCA-phix-db.mmi contains (docs/host_depletion_references.md). Left as is: changing it changes
+# host depletion for future index builds.
 cat ref/GCA_009914755.4_T2T-CHM13v2.0_genomic.fna ref/NC_001422.fna > ref/human-GCA-phix.fna
 
 curl -o ref/link_index https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Assemblies/main/assembly_index/Year1_assemblies_v2_genbank.index

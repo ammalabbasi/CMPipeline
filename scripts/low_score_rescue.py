@@ -18,6 +18,10 @@ Two subcommands, both counts/metadata only (no sequence is read or written):
               low_as_mode, low_as_mode_reason
             The @PG CL is read in memory (only the program, `mem` and -T are looked at); it is
             never written: command lines carry paths and sample names.
+            With --provenance FILE it also writes the input provenance row from the SAME header
+            text (scripts/header_provenance.py: @SQ fingerprint, contig classes, @PG chain,
+            reduced bwa options, upstream unmapped filters; audit X13), so the header is read
+            from the alignment once.
 
   survival  Counts how many of the rescued read names (the ID list extractReads writes, names
             exactly as `samtools fastq -N` wrote them) are still present after host depletion
@@ -215,6 +219,16 @@ def write_row(path: Path, fields: list[str], row: dict) -> None:
         writer.writerow(row)
 
 
+def header_provenance():
+    """scripts/header_provenance.py, loaded from beside this file (it is not an installed module)."""
+    import importlib.util
+    path = Path(__file__).resolve().parent / "header_provenance.py"
+    spec = importlib.util.spec_from_file_location("header_provenance", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -223,6 +237,8 @@ def main() -> int:
     d.add_argument("--sample", required=True)
     d.add_argument("--mode", default="auto", help="--extract_low_score_mapped: auto | on | off")
     d.add_argument("--output", required=True, type=Path)
+    d.add_argument("--provenance", type=Path, default=None,
+                   help="also write the input provenance row (scripts/header_provenance.py) here")
     s = sub.add_parser("survival")
     s.add_argument("--ids", required=True, type=Path, help="gzipped rescued read names, one per line")
     s.add_argument("--depleted", required=True, type=Path, help="host-depleted FASTQ(.gz)")
@@ -232,8 +248,12 @@ def main() -> int:
     a = ap.parse_args()
 
     if a.cmd == "decide":
+        text = a.header.read_text(errors="replace")
         try:
-            row = decide(a.header.read_text(errors="replace"), a.mode, a.sample)
+            row = decide(text, a.mode, a.sample)
+            if a.provenance is not None:
+                provenance = header_provenance()
+                provenance.write_row(a.provenance, provenance.parse(text, a.sample))
         except ValueError as exc:
             sys.exit(f"ERROR: {a.sample}: {exc}")
         write_row(a.output, DECISION_FIELDS, row)
