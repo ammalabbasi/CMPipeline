@@ -1,137 +1,21 @@
 name: krakenUniq_bracken_env
+
+# 2026-10-26 tool update. Was a 134-line `conda env export` (bracken 2.9, python 3.9, plus kraken2,
+# blast, entrez-direct and perl modules the pipeline never calls). Now only what the Bracken process
+# runs: krakenuniq, bracken, python (scripts/kreport2mpa.py) and the shell tools in the task.
+# Same pins pksProfiler validated (fix/v1.0.0-rc4: krakenuniq 1.0.4, bracken 3.1p1, python 3.12).
+# bracken 3.1p1 prints "Bracken v3.0.1" (upstream never updated VERSION); flags -d -i -o -w -r -l -t
+# are unchanged. The exact build is the lockfile, conda_envs/lock/krakenUniq_bracken_env.linux-64.txt.
+
 channels:
   - conda-forge
   - bioconda
   - nodefaults   # no Anaconda defaults channel (audit D07; the lockfile is what runs)
+
 dependencies:
-  - _libgcc_mutex=0.1
-  - _openmp_mutex=4.5
-  - bc=1.07.1
-  - blast=2.16.0
-  - bracken=2.9
-  - bzip2=1.0.8
-  - c-ares=1.34.4
-  - ca-certificates=2024.12.14
-  - coreutils=9.5
-  - curl=8.8.0
-  - entrez-direct=22.4
-  - gawk=5.3.1
-  - gettext=0.22.5
-  - gettext-tools=0.22.5
-  - gmp=6.3.0
-  - gzip=1.13
-  - htslib=1.21
-  - keyutils=1.6.1
-  - kmer-jellyfish=1.1.12
-  - kraken2=2.1.3
+  - python=3.12
   - krakenuniq=1.0.4
-  - krb5=1.21.3
-  - ld_impl_linux-64=2.43
-  - libasprintf=0.22.5
-  - libasprintf-devel=0.22.5
-  - libcurl=8.8.0
-  - libdeflate=1.23
-  - libedit=3.1.20240808
-  - libev=4.33
-  - libffi=3.4.2
-  - libgcc=14.2.0
-  - libgcc-ng=14.2.0
-  - libgettextpo=0.22.5
-  - libgettextpo-devel=0.22.5
-  - libgomp=14.2.0
-  - libiconv=1.17
-  - libidn2=2.3.7
-  - liblzma=5.6.3
-  - liblzma-devel=5.6.3
-  - libnghttp2=1.58.0
-  - libnsl=2.0.1
-  - libsqlite=3.46.0
-  - libssh2=1.11.0
-  - libstdcxx=14.2.0
-  - libstdcxx-ng=14.2.0
-  - libunistring=0.9.10
-  - libuuid=2.38.1
-  - libxcrypt=4.4.36
-  - libzlib=1.2.13
-  - lz4-c=1.9.4
-  - mpfr=4.2.1
-  - ncbi-vdb=3.2.0
-  - ncurses=6.5
-  - openssl=3.4.0
-  - perl=5.32.1
-  - perl-archive-tar=2.40
-  - perl-base=2.23
-  - perl-business-isbn=3.007
-  - perl-business-isbn-data=20210112.006
-  - perl-carp=1.50
-  - perl-common-sense=3.75
-  - perl-compress-raw-bzip2=2.201
-  - perl-compress-raw-zlib=2.202
-  - perl-constant=1.33
-  - perl-digest-hmac=1.04
-  - perl-digest-md5=2.58
-  - perl-encode=3.21
-  - perl-encode-locale=1.05
-  - perl-exporter=5.74
-  - perl-exporter-tiny=1.002002
-  - perl-extutils-makemaker=7.70
-  - perl-file-listing=6.16
-  - perl-file-spec=3.48_01
-  - perl-html-parser=3.81
-  - perl-html-tagset=3.20
-  - perl-http-cookies=6.10
-  - perl-http-daemon=6.16
-  - perl-http-date=6.06
-  - perl-http-message=6.36
-  - perl-http-negotiate=6.01
-  - perl-io-compress=2.201
-  - perl-io-html=1.004
-  - perl-io-socket-ssl=2.075
-  - perl-io-zlib=1.14
-  - perl-json=4.10
-  - perl-json-xs=4.03
-  - perl-libwww-perl=6.67
-  - perl-list-moreutils=0.430
-  - perl-list-moreutils-xs=0.430
-  - perl-lwp-mediatypes=6.04
-  - perl-lwp-protocol-https=6.10
-  - perl-mime-base64=3.16
-  - perl-mozilla-ca=20211001
-  - perl-net-http=6.22
-  - perl-net-ssleay=1.92
-  - perl-ntlm=1.09
-  - perl-parent=0.243
-  - perl-pathtools=3.75
-  - perl-scalar-list-utils=1.68
-  - perl-socket=2.027
-  - perl-storable=3.15
-  - perl-test-fatal=0.016
-  - perl-test-requiresinternet=0.05
-  - perl-test-warnings=0.031
-  - perl-time-local=1.35
-  - perl-timedate=2.33
-  - perl-try-tiny=0.31
-  - perl-types-serialiser=1.01
-  - perl-uri=5.17
-  - perl-url-encode=0.03
-  - perl-www-robotrules=6.02
-  - pip=24.3.1
-  - popt=1.16
-  - python=3.9.19
-  - python_abi=3.9
-  - readline=8.2
-  - rpsbproc=0.5.0
-  - rsync=3.3.0
-  - samtools=1.21
-  - setuptools=75.8.0
-  - tar=1.34
-  - tk=8.6.13
-  - tzdata=2025a
-  - wget=1.21.4
-  - wheel=0.45.1
-  - xxhash=0.8.2
-  - xz=5.6.3
-  - xz-gpl-tools=5.6.3
-  - xz-tools=5.6.3
-  - zlib=1.2.13
-  - zstd=1.5.6
+  - bracken=3.1p1
+  - gawk=5.3.1
+  - gzip=1.13
+  - coreutils=9.5

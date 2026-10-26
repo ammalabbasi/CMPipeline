@@ -6,4 +6,4 @@ channels:
   - nodefaults   # no Anaconda defaults channel (audit D07; the lockfile is what runs)
 
 dependencies:
-  - fastp=0.24.0
+  - fastp=1.3.7

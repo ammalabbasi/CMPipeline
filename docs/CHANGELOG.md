@@ -4,6 +4,12 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Tool update (2026-10-26):** minimap2 2.28 → 2.31, samtools → 1.24, fastp 0.24.0 → 1.3.7, Bracken 2.9 →
+  3.1p1, bowtie2 (MetaPhlAn env) → 2.5.5; the Kraken/Bracken env is reduced to the tools the task runs.
+  These are the versions pksProfiler validated. **fastp 1.x can change read counts** (poly-G trimming and
+  adapter matching). The R/ConQuR/decontam stack, MetaPhlAn 4.1.1 + its database, HUMAnN, skani and the
+  KrakenUniq database stay frozen, with reasons in `docs/tool_versions.md`.
+
 - **Bracken now uses each sample's read length (`--bracken_read_length auto`, new default).** Bracken
   re-estimates species abundance with a k-mer distribution built for one read length. The default was a
   fixed 50, applied to ~150 bp TCGA WGS reads although the database ships 50–300 bp distributions. `auto`

@@ -6,5 +6,5 @@ channels:
   - nodefaults   # no Anaconda defaults channel (audit D07; the lockfile is what runs)
 
 dependencies:
-  - minimap2=2.28
-  - samtools=1.21
+  - minimap2=2.31
+  - samtools=1.24
