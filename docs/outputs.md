@@ -26,9 +26,21 @@ concurrent runs do not overwrite each other's measurements:
 
 | `pipeline_info/` | Contents |
 |---|---|
-| `RUN_REPORT.txt` | the run in reading order, appended per session — status, reproducibility, per-process cost |
+| `RUN_REPORT.txt` | the run in reading order, appended per session — status, reproducibility, per-process cost, the conda envs specified, and *TOOL VERSIONS (as run)*: what each task actually executed |
 | `provenance/<sessionId>_<runName>.json` | the complete machine-readable record, one per launch (a `-resume` adds a new file). It carries SHA-256 digests of the cohort tables (`outputs.cohort_tables`), the conda envs this run used, ConQuR/cqrReg versions, and a digest of `conda_envs/` |
-| `trace.txt`, `report.html`, `timeline.html`, `dag.html` | Nextflow's own execution records, on by default |
+| `trace.txt`, `report.html`, `timeline.html`, `dag.html` | Nextflow's own execution records, on by default ; `trace.txt` adds `attempt`, `cpus`, `memory` and `workdir` to Nextflow's default columns |
+| `<work dir>/.tool_versions.tsv` | per task: each tool the task ran, its package, status, version, lockfile pin, resolved path and the active `$CONDA_PREFIX` (`scripts/record_tool_versions.sh`) |
+
+**What ran, not just what was pinned.** The *CONDA ENVS THIS RUN USED* section lists what each
+lockfile specifies. *TOOL VERSIONS (as run)* lists what each task's binaries reported from inside
+the task, after conda activation: tool, version, pin, the version conda installed in the prefix,
+task count and where it ran from. Anything that is not the pinned build from the task's own env
+appears under *TOOL VERSION MISMATCH*: `OUTSIDE_ENV` (resolved outside the env, e.g. a login
+`tools/minimap2` earlier on PATH), `VERSION_MISMATCH`, `NOT_FOUND`, `NO_ENV`, `MISSING` (a recording
+task left no record) and `INSTALLED_MISMATCH` (the binary disagrees with its env's conda-meta). With
+`--tool_version_check strict` (default) a task stops the run at the first of the first four, and the
+finaliser exits non-zero on any of them; the JSON record carries the same under
+`environment.tool_versions`. Tool names, versions and paths only, never a sample ID.
 
 `RUN_REPORT.txt` states the commit and **whether the working tree was dirty**. A run
 launched with uncommitted edits says so, in those words — "this run is NOT attributable to

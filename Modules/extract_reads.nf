@@ -34,6 +34,7 @@ process extractReads {
     def reference = reference_files ? reference_files[0] : null
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'samtools htsfile:htslib bgzip:htslib python')}
 
     READS="${sampleID}.UNMAPPED.fastq.gz"
     FORMAT="\$(htsfile "${alignment}" 2>/dev/null || true)"

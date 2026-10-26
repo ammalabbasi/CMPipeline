@@ -36,6 +36,7 @@ process cohortReport {
     def record = RunRecord.path(params.tracedir, "${workflow.sessionId}_${workflow.runName}")
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'python3:python')}
     python3 "${params.scripts}/build_cohort_report.py" \\
         --qc-summary "${qc_summary}" \\
         --output cmp_cohort_report.html \\

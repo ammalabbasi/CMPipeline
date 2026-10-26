@@ -50,6 +50,7 @@ process validationSpeciesList {
                    "max_missing=${params.validation_max_missing_frac};t2t=GCF_009914755.1;" +
                    "refseq=${validationSnapshot()};deps=${deps};v4"
     """
+    ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}/validation_species_list.py" \\
         --species_table "${species_table}" \\
         --taxdb "${taxdb}" \\
@@ -82,6 +83,7 @@ process buildValidationRef {
     script:
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'python minimap2 skani')}
     python "${params.scripts}/build_validation_ref.py" \\
         --species "${species}" \\
         --cache_dir "${params.validation_cache_dir}/downloads" \\
@@ -146,6 +148,7 @@ process alignForValidation {
     def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'minimap2 python')}
     {
         ${stream}
     } | minimap2 -ax sr ${frag} -t ${task.cpus} -p 0.99 -N 100 --secondary=yes "${index}" /dev/stdin 2> minimap2.log \\
@@ -188,6 +191,7 @@ process applyValidationMask {
     script:
     def groups_arg = groups ? "--groups \"${groups}\"" : ""
     """
+    ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}/apply_validation_mask.py" \\
         --species_table "${species_table}" \\
         --stats ${stats} \\
@@ -213,6 +217,7 @@ process compareDecontamLevels {
 
     script:
     """
+    ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}/compare_decontam_levels.py" \\
         --species_final "${species_final}" --genus_final "${genus_final}"
     """

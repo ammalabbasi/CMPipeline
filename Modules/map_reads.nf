@@ -37,6 +37,7 @@ process mapReads {
     def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'minimap2 samtools')}
     gzip -t "${reads_fastq}"
 
     minimap2 -2 -ax sr ${frag} -t "${task.cpus}" "${params.hg38_db}" "${reads_fastq}" |

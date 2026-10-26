@@ -166,6 +166,9 @@ def render_script(mode, alignment, reference="", input_type="bam", cpus=1):
     }
     for groovy, value in values.items():
         body = body.replace(groovy, value)
+    # The runtime tool-version record (lib/ToolVersions.groovy) needs a conda env and is tested in
+    # tests/test_tool_versions.py; here it renders as a no-op.
+    body = re.sub(r"\$\{ToolVersions\.record\([^\n]*\)\}", ": tool-version record", body)
     left = re.findall(r"(?<!\\)\$\{[^}]*\}", body)
     assert not left, f"unsubstituted Groovy interpolation: {left}"
     return groovy_unescape(body)

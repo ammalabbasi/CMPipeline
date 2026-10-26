@@ -31,6 +31,7 @@ process qcSummary {
     script:
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'python3:python')}
     python3 "${params.scripts}/build_qc_summary.py" \\
         --inputs . \\
         --output cmp.qc.summary.tsv \\

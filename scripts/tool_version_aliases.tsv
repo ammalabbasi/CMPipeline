@@ -1,0 +1,10 @@
+# Conda builds whose binary reports a version other than the conda package version.
+# Read by scripts/record_tool_versions.sh (task-side check) and scripts/finalize_provenance.py
+# (RUN_REPORT TOOL VERSIONS). A row makes `reports` an accepted self-report for exactly that
+# package at exactly that conda version; every other version still has to match its pin.
+# Add a row only after checking the build's own source, and say where the string comes from.
+# None is needed for the current lockfiles (checked 2026-10-26 against the built envs: every
+# recorded tool reports its package version). pksProfiler's bracken 3.1p1 -> 3.0.1 row does not
+# apply: CMPipeline pins bracken 2.9, which reports v2.9.
+#
+# package	conda_version	reports	why

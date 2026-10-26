@@ -16,6 +16,11 @@ params.skip_cohort_report = false    // Self-contained HTML cohort report
 // finish | ignore: what a per-sample failure does to the run (audit C10). finish (default) stops it;
 // ignore lets the other samples complete, with the failures listed in the run report.
 params.sample_failure_strategy = 'finish'
+// strict | warn: every task records the version and path of each tool it runs (audit K06/K07;
+// lib/ToolVersions.groovy). strict (default) stops the run (exit 78 -> terminate) when a tool resolves
+// outside the task's conda env or differs from its lockfile pin; warn records it in RUN_REPORT and
+// carries on. Results from a warn run with a mismatch were NOT produced by the pinned tools.
+params.tool_version_check = 'strict'
 params.save_intermediates = false   // publish intermediate read files too (default: host-depleted reads only; audit C11)
 
 // Entry point for resuming workflow
@@ -384,6 +389,8 @@ workflow {
     if (!(params.sample_failure_strategy in ['finish', 'ignore'])) {
         error "--sample_failure_strategy must be one of: finish, ignore"
     }
+    def toolVersionProblem = ToolVersions.validate(params.tool_version_check)
+    if (toolVersionProblem) error toolVersionProblem
     def adapterTrimMode = params.adapter_trim.toString().toLowerCase()
     if (!(adapterTrimMode in ['auto', 'always', 'never'])) {
         error "Invalid --adapter_trim '${params.adapter_trim}'; expected auto, always or never"
@@ -1272,9 +1279,15 @@ workflow {
         // Provenance, completion half. Shelled out so the rendering and trace parsing
         // sit somewhere the test suite can reach. A provenance failure must never mask
         // the run's own outcome, hence the catch.
+        //
+        // The finaliser runs on the head job's python3, so it gets the launch environment's
+        // library and module paths unless they are dropped here (audit X04): with the TSCC login
+        // LD_LIBRARY_PATH it died on `import hashlib` (ascat's libcrypto) and RUN_REPORT was never
+        // written while the run reported success. `env -u` drops them; -s ignores ~/.local.
         try {
             def finalise = [
-                'python3', "${projectRoot}/scripts/finalize_provenance.py",
+                'env', '-u', 'LD_LIBRARY_PATH', '-u', 'PYTHONPATH', '-u', 'PYTHONHOME',
+                'python3', '-s', "${projectRoot}/scripts/finalize_provenance.py",
                 '--tracedir',    tracedirOut,
                 '--session',     "${wfMeta.sessionId}_${wfMeta.runName}",
                 '--success',     "${wfMeta.success}",
@@ -1293,6 +1306,14 @@ workflow {
             ]
             def proc = finalise.execute()
             proc.waitForProcessOutput(System.out, System.err)
+            // Its exit status used to be ignored (audit X04). Non-zero: the record or RUN_REPORT is
+            // incomplete, or (--tool_version_check strict) a task's tool-version record shows a tool
+            // that is not the pinned build -- RUN_REPORT's TOOL VERSION MISMATCH section says which.
+            if (proc.exitValue() != 0) {
+                System.err.println("ERROR: scripts/finalize_provenance.py exited ${proc.exitValue()}: " +
+                    "see TOOL VERSION MISMATCH in ${tracedirOut}/RUN_REPORT.txt, or the error above. " +
+                    "Do not treat this run's outputs as produced by the pinned tools until resolved.")
+            }
         }
         catch (Exception problem) {
             System.err.println("WARN: could not finalise the provenance record: ${problem.message}")

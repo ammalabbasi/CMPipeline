@@ -128,6 +128,7 @@ The main options. [`docs/parameters.md`](docs/parameters.md) lists all of them.
 | `--skip_humann3` | `true` | No | set `false` to run HUMAnN 3 |
 | `--start_from` | `beginning`, `decontam`, `batch_correction` | No | enter at a later stage from an existing table |
 | `--sample_failure_strategy` | `finish` (default), `ignore` | No | whether one sample's failure stops the run |
+| `--tool_version_check` | `strict` (default), `warn` | No | stop the run if a task's tool is not the pinned build from its own conda env |
 | `--save_intermediates` | `false` | No | also publish intermediate read files |
 
 Boolean flags accept only `true` or `false`.

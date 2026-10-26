@@ -30,6 +30,7 @@ process lowAsSurvival {
     def classified_arg = classified ? "--classified \"${classified}\"" : ""
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'python3:python')}
     python3 "${params.scripts}/low_score_rescue.py" survival \\
         --ids "${low_as_ids}" --depleted "${host_depleted}" ${classified_arg} \\
         --sample "${sampleID}" --output "${sampleID}.low_as_survival.tsv"

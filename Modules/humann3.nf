@@ -33,6 +33,7 @@ process humann3 {
     def profile_arg = taxonomic_profile ? "--taxonomic-profile \"${taxonomic_profile}\"" : ""
 
     """
+    ${ToolVersions.record(task, params, 'humann metaphlan bowtie2 diamond')}
     out1="${SAMPLE_NAME}_genefamilies.tsv"
     out2="${SAMPLE_NAME}_pathabundance.tsv"
     out3="${SAMPLE_NAME}_pathcoverage.tsv"
@@ -79,6 +80,7 @@ process merge_humann3 {
 
     script:
     """
+    ${ToolVersions.record(task, params, 'humann')}
     # Organize files into separate directories for humann_join_tables
     mkdir -p gf_dir pa_dir pc_dir
 

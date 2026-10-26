@@ -196,6 +196,36 @@ def run_a(fx, run, expected):
     check(f"A: RUN_REPORT LOW-SCORE RESCUE section (off {off}, on {on})",
           "LOW-SCORE RESCUE" in text and f"off {off}   on {on}" in text)
 
+    # ---- runtime tool versions (audit K06/K07): every recording task wrote a record, every tool
+    # ran from its own env at its pin -- except the KrakenUniq stub, a shell function, which the
+    # record must flag (integration.config checks Bracken in warn mode for exactly that reason).
+    trace = run / "pipeline_info/trace.txt"
+    rows_t = read_tsv(trace) if trace.exists() else []
+    check("A: trace has a workdir column", bool(rows_t) and "workdir" in rows_t[0])
+    statuses, missing_rec = {}, []
+    for row in rows_t:
+        if row.get("status") not in ("COMPLETED", "CACHED"):
+            continue
+        rec = Path(row.get("workdir", "")) / ".tool_versions.tsv"
+        if not rec.exists():
+            missing_rec.append(row.get("name"))
+            continue
+        for r in read_tsv(rec):
+            statuses.setdefault((r["process"].split(":")[-1], r["tool"], r["status"]), 0)
+            statuses[(r["process"].split(":")[-1], r["tool"], r["status"])] += 1
+    check("A: every completed task left a tool-version record", bool(rows_t) and not missing_rec,
+          f"missing: {missing_rec[:5]}")
+    bad = sorted(k for k in statuses if k[2] != "ok" and not (k[0] == "Bracken" and k[1] == "krakenuniq"))
+    check("A: every recorded tool is ok (from its env, at its pin)", bool(statuses) and not bad, f"{bad[:5]}")
+    stub = sorted(k[2] for k in statuses if k[0] == "Bracken" and k[1] == "krakenuniq")
+    check("A: the KrakenUniq stub (a shell function) is recorded as OUTSIDE_ENV", stub == ["OUTSIDE_ENV"],
+          f"{stub}")
+    check("A: RUN_REPORT TOOL VERSIONS (as run) section", "TOOL VERSIONS (as run)" in text)
+    mismatch = text.split("TOOL VERSION MISMATCH", 1)[1].split("\n\n", 1)[0] if "TOOL VERSION MISMATCH" in text else ""
+    check("A: RUN_REPORT TOOL VERSION MISMATCH names only the krakenuniq stub",
+          "krakenuniq" in mismatch and mismatch.count("OUTSIDE_ENV") == 1 and "MISSING" not in mismatch,
+          mismatch.strip()[:300])
+
 
 def run_b(fx, run, expected, batch_correction):
     res = run / "results"

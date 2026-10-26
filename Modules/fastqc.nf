@@ -21,6 +21,7 @@ process FASTQC {
     def inputs = read_files.collect { "\"${it}\"" }.join(' ')
 
     """
+    ${ToolVersions.record(task, params, 'fastqc')}
     fastqc -t ${task.cpus} -o ./ ${inputs}
     """
 }

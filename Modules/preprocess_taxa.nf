@@ -28,6 +28,7 @@ process process_metaphlan {
 
 
     """
+    ${ToolVersions.record(task, params, 'python3:python')}
     
     # Run the MetaPhlAn script to merge tables
     find -L . -maxdepth 1 -name '*.profiled_metagenome.txt' -printf '%f\n' | sort > metaphlan_files.txt   # one argument, not one per sample (audit C15)
@@ -84,6 +85,7 @@ process process_bracken {
     def species_str = species_files.join(' ')
 
     """
+    ${ToolVersions.record(task, params, 'python')}
 
     # File lists come from find (no per-file argv) and go in as ONE argument, so the merge does not
     # hit ARG_MAX at cohort scale (audit C15). Sorted for a deterministic column order.
@@ -139,6 +141,7 @@ process consensus_taxa {
     script:
     def metaphlan_arg = metaphlan_file ? "--metaphlan ${metaphlan_file}" : ''
     """
+    ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}"/compute_consensus_taxa.py ${metaphlan_arg} \\
                                      --bracken_genus ${bracken_genus_file} \\
                                      --bracken_species ${bracken_species_file} \\

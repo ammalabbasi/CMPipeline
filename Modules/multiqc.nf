@@ -28,6 +28,7 @@ process multiqc {
     script:
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'multiqc')}
     multiqc -f -p \\
         --data-dir --data-format tsv \\
         --cl-config "max_table_rows: 10000" \\

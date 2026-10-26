@@ -82,6 +82,31 @@ For another cluster, copy the relevant `conf/*.config` file or provide an overla
 nextflow run main.nf -profile slurm -c my-site.config --sample samples.csv
 ```
 
+## Launch environment
+
+Nextflow copies the launching shell's environment into every task (and `sbatch` copies it into the
+driver). Two things in a login shell can make a task run something other than its pinned tool:
+
+- **PATH order.** Nextflow activates a task's env with `source <base>/bin/activate <env>`, which puts
+  the env's `bin` where the conda base's `bin` was, not first. A tool directory earlier on PATH
+  (on TSCC, `~/.bashrc`'s `tools/minimap2` 2.24, or `nf-env/bin` with samtools, bgzip, krakenuniq,
+  bracken and python) then wins over the env. CRC50 attempt 1 (Job 12380606) ran minimap2 2.24 in
+  every mapReads task this way, against a pinned 2.28.
+- **Library and module paths.** `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CPATH`, `PYTHONPATH`,
+  `PYTHONHOME`, `PERL5LIB` and `R_LIBS*` from the login shell.
+
+The pipeline guards against both. `process.beforeScript` (`nextflow.config`) unsets those variables
+and puts `$(conda info --base)/bin` first before activation, so the env's `bin` comes first after it;
+`PYTHONNOUSERSITE=1` keeps `~/.local` packages out. Every process then records the version and path
+of each tool it runs, and `--tool_version_check strict` (default) stops the run (exit 78,
+`terminate`) if one resolves outside the task's env or differs from its lockfile pin. `warn` records
+the problem in `RUN_REPORT.txt` and carries on. The provenance finaliser runs with
+`LD_LIBRARY_PATH`, `PYTHONPATH` and `PYTHONHOME` dropped, and its exit status is reported.
+
+A clean launch is still the first line of defence: start the driver from `PATH=/usr/local/bin:/usr/bin:/bin`,
+source `<conda base>/etc/profile.d/conda.sh`, add only Java, and call Nextflow by absolute path (see the
+`env -i` re-exec at the top of the TSCC production drivers, which keeps only `SLURM_*` and a few basics).
+
 ## Conda environments
 
 Conda is enabled by default. To use Mamba where available:

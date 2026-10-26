@@ -41,6 +41,7 @@ process Bracken {
 
     """
 
+    ${ToolVersions.record(task, params, 'krakenuniq bracken python')}
     KRAKEN_REPORT="${SAMPLE_NAME}.krakenuniq.report.txt"
     CLASSIFIED="${SAMPLE_NAME}.classified.fasta"
     UNCLASSIFIED="${SAMPLE_NAME}.unclassified.fasta"

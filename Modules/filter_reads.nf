@@ -49,6 +49,7 @@ process filterReads {
 
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'fastp')}
     FILTERED="${sampleID}.UNMAPPED.FASTP.FILTERED.fastq.gz"
     COUNT="${sampleID}.reads_after_filtering.txt"
     for input_fastq in ${inputs}; do

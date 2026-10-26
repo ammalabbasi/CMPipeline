@@ -47,6 +47,7 @@ process BatchCorrection {
     def method_flag = params.batch_corr_method ?: "tune"
     def allow_flag = params.batch_corr_allow_uncorrected.toString() == 'true' ? "--allow_uncorrected" : ""
     """
+    ${ToolVersions.record(task, params, 'Rscript:r-base')}
     export R_LIBS="\$CONDA_PREFIX/lib/R/library"
     export R_LIBS_USER="\$CONDA_PREFIX/lib/R/library"
     export R_LIBS_SITE="\$CONDA_PREFIX/lib/R/library"

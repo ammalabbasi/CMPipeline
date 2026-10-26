@@ -90,6 +90,31 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**Tool environment guard and runtime tool versions** (audit K06/K07/X04; ported from pksProfiler
+F16, `26e196d`, `2bc7ca9`, `2c0f8c8`). CRC50 attempt 1 (Job 12380606) ran `~/.bashrc`'s
+`tools/minimap2` 2.24 in all 50 `mapReads` tasks against a pinned 2.28, and nothing in the run record
+said so: `RUN_REPORT.txt` listed what the lockfiles specify.
+- `process.beforeScript` puts the conda base `bin` first before activation, so each task's env `bin`
+  is first after it, and unsets `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CPATH`, `PYTHONHOME`, `PERL5LIB`
+  and `R_LIBS*` leaked from the launching shell (`PYTHONNOUSERSITE`/`PYTHONPATH` were already set).
+- Every process that runs a tool records each tool's version and resolved path from inside the task,
+  after activation (`scripts/record_tool_versions.sh`, `lib/ToolVersions.groovy`), into
+  `<work dir>/.tool_versions.tsv`, and checks it against the task's own lockfile.
+  **`--tool_version_check strict` (new, default)** stops the run (exit 78 -> `terminate`, also under
+  `--sample_failure_strategy ignore`) when a tool resolves outside the env, is missing, or is off its
+  pin; `warn` records and carries on. A version read is retried (stdout + stderr, timeout, backoff).
+- `RUN_REPORT.txt` gains *TOOL VERSIONS (as run)* and *TOOL VERSION MISMATCH*; the JSON record gains
+  `environment.tool_versions`. The finaliser also flags tasks that left no record (`MISSING`) and
+  binaries that disagree with their env's conda-meta (`INSTALLED_MISMATCH`), and exits 1 on any
+  problem in strict mode.
+- The finaliser now runs with `LD_LIBRARY_PATH`/`PYTHONPATH`/`PYTHONHOME` dropped (the login
+  `LD_LIBRARY_PATH` broke its `import hashlib`), and its exit status is reported instead of ignored.
+- `trace.txt` adds `attempt`, `cpus`, `memory` and `workdir`.
+- MetaPhlAn's `[DEBUG]` PATH/`which`/`--version` echo is replaced by the record.
+- Results are unchanged for a run that already used the pinned tools. **Every task's script changed
+  (one added line), so `-resume` across this change re-runs every task**; switching
+  `--tool_version_check` also changes the scripts and so re-runs them.
+
 **Reproducibility**
 - Runs on Nextflow 24.10.0 **and** 26.04.6; no `NXF_VER` pin. `manifest.nextflowVersion` is
   `>=24.10.0`.

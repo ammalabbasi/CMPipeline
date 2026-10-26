@@ -54,6 +54,7 @@ process Decontamination {
     def unknown_arg = params.decontam_allow_unknown_library.toString() == 'true' ? "--allow_unknown_library" : ""
     """
     set -euo pipefail
+    ${ToolVersions.record(task, params, 'Rscript:r-base')}
     Rscript "${params.decontam_script}" \\
         --otu_table "${otu_table}" \\
         --metadata "${metadata}" \\
@@ -96,6 +97,7 @@ process aggregateDecontaminatedSpecies {
     path("${prefix}.genus_rollup_excluded.tsv"), emit: excluded
     script:
     """
+    ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}/aggregate_decontaminated_species.py" \\
         --input "${species_table}" --output "${prefix}.decontam_pkg_decontaminated.genus.csv" \\
         --excluded "${prefix}.genus_rollup_excluded.tsv" \\

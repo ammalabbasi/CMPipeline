@@ -32,11 +32,8 @@ process metaphlan4 {
     def inputs = read_files.collect { "\"${it}\"" }.join(' ')
 
     """
-    echo "[DEBUG] PATH is: \$PATH"
-    echo "[DEBUG] which metaphlan:"
-    which metaphlan || echo "metaphlan not found"
-    metaphlan --version || true
-
+    # The [DEBUG] PATH / which / --version echo that was here is replaced by the tool-version record.
+    ${ToolVersions.record(task, params, 'metaphlan bowtie2')}
     out1="${SAMPLE_NAME}.metagenome.bowtie2.bz2"
     out2="${SAMPLE_NAME}.sam.bz2"
     out3="${SAMPLE_NAME}.profiled_metagenome.txt"
