@@ -49,7 +49,7 @@ cd CMPipeline
 | GRCh38 minimap2 index | `--hg38_db` | host depletion |
 | T2T-CHM13 + PhiX minimap2 index | `--t2t_phix_db` | host depletion |
 | HPRC pangenome `.mmi` (one file or a directory) | `--pangenome_db` | optional extra host depletion |
-| KrakenUniq/Bracken database | `--kraken_db` | classification; must contain `database<N>mers.kmer_distrib` for `--bracken_read_length` |
+| KrakenUniq/Bracken database | `--kraken_db` | classification; must contain `database<N>mers.kmer_distrib` files (one per read length; `--bracken_read_length auto` picks per sample) |
 | MetaPhlAn 4 database (vJun23) | `--metaphlan_db` | classification |
 | ChocoPhlAn v201901_v31 + UniRef90 | `--humann3_nucleotide_db`, `--humann3_protein_db` | HUMAnN 3 only |
 

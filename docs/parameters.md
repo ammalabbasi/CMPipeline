@@ -61,7 +61,7 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--tumor_only` | `false` | correct tumours only. Which types count as tumours is `--batch_corr_tumor_values` |
 | `--phase` | `auto` | only `auto` is implemented: phase 1 (16 settings), then phase 3 if phase 1 did not reduce the batch effect enough |
 | `--r2_threshold` | `0.25` | phase 1 is accepted if it cuts the batch R² by at least this fraction |
-| `--bracken_read_length` | `50` | Bracken `-r`; the Kraken database must hold a `database<N>mers.kmer_distrib` for it, checked at launch |
+| `--bracken_read_length` | `auto` | Bracken `-r`. `auto`: per sample, the `database<N>mers.kmer_distrib` length closest to the sample's median read length (ties go to the shorter), written to `<sample>.bracken_read_length.tsv`. An integer forces one length for every sample; the database must hold that `kmer_distrib`. Checked at launch. Before 2026-10-26 the default was a fixed 50 |
 | `--bracken_threshold` | `2` | Bracken `-t`: the minimum reads a taxon needs to be re-estimated. A read threshold, not a thread count. A thin sample in which no taxon reaches it gets an empty no-call table instead of failing the run |
 | `--consensus_min_reads` | `100000` | the MetaPhlAn gate above; a non-negative integer (`1e5` is rejected) |
 

@@ -4,6 +4,17 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Bracken now uses each sample's read length (`--bracken_read_length auto`, new default).** Bracken
+  re-estimates species abundance with a k-mer distribution built for one read length. The default was a
+  fixed 50, applied to ~150 bp TCGA WGS reads although the database ships 50–300 bp distributions. `auto`
+  takes the median read length of the classified reads and the closest available distribution, and writes
+  the choice to `<sample>.bracken_read_length.tsv`. **Species-level Bracken results change**; an integer
+  restores a fixed length.
+
+- **Alignment validation is also run with `--frag=no`.** `alignForValidation` streamed interleaved mates
+  into `minimap2 -ax sr` in fragment mode, the same input-route dependence fixed for host depletion.
+  Validation calls may change; re-score.
+
 - **Batch correction no longer stops a whole rank when one prevalence bin sits in a single batch
   (audit K04).** `Tune_ConQuR` scored each bin's uncorrected table with `adonis(tab ~ batch)` without
   the single-batch guard it uses for corrected tables, so one batch-confined rare taxon failed the rank

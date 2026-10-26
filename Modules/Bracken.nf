@@ -29,6 +29,7 @@ process Bracken {
       path("*.bracken.*.report.txt"),
       path("*.bracken.*.krakenreport.txt"),
       path("*.bracken.*.mpa.krakenreport.txt"), emit: reports
+    tuple val(sampleID), path("*.bracken_read_length.tsv"), emit: read_length
     tuple val(sampleID), path("*.metaphlan.fastq.gz"), emit: metaphlan_reads, optional: true
 
     script:
@@ -60,6 +61,23 @@ process Bracken {
     krakenuniq --db "${params.kraken_db}" --threads ${task.cpus} --report-file \${REPORT} --output \${OUTPUT} \
         --classified-out \${CLASSIFIED_FASTA} --unclassified-out \${UNCLASSIFIED_FASTA} "${SAMPLE_NAME}.trimmed.fastq"
 
+    # Bracken read length (2026-10-26; pksProfiler c6599c8 measures it per sample too). Bracken's
+    # re-estimation uses a kmer distribution built for one read length; a fixed 50 was applied to
+    # ~150 bp TCGA WGS reads. auto: median length of the first 1,000,000 reads, then the database
+    # length closest to it (ties -> shorter). The choice is written out for QC and provenance.
+    MEDIAN_LEN=\$(awk 'NR%4==2{print length(\$0)} NR>=4000000{exit}' "${SAMPLE_NAME}.trimmed.fastq" | sort -n | awk '{a[NR]=\$1} END{print (NR ? a[int((NR+1)/2)] : 0)}')
+    AVAILABLE=\$(ls "${params.kraken_db}" | sed -n 's/^database\([0-9][0-9]*\)mers\.kmer_distrib\$/\1/p' | sort -n | tr '\n' ' ')
+    if [[ "${params.bracken_read_length}" == "auto" ]]; then
+        BRACKEN_LEN=\$(for L in \$AVAILABLE; do d=\$(( L > MEDIAN_LEN ? L - MEDIAN_LEN : MEDIAN_LEN - L )); echo "\$d \$L"; done | sort -n -k1,1 -k2,2 | head -1 | cut -d' ' -f2)
+        LEN_MODE=auto
+    else
+        BRACKEN_LEN=${params.bracken_read_length}
+        LEN_MODE=fixed
+    fi
+    [[ -n "\$BRACKEN_LEN" ]] || { echo "ERROR: no database<N>mers.kmer_distrib in ${params.kraken_db}" >&2; exit 1; }
+    printf 'sample\tmedian_read_length\tbracken_read_length\tmode\tavailable_lengths\n%s\t%s\t%s\t%s\t%s\n' \
+        "${SAMPLE_NAME}" "\$MEDIAN_LEN" "\$BRACKEN_LEN" "\$LEN_MODE" "\$(echo \$AVAILABLE | tr ' ' ',')" > "${SAMPLE_NAME}.bracken_read_length.tsv"
+
     for lvl in G S; do
         bracken_output="${SAMPLE_NAME}.bracken.\${lvl}.report.txt"
         bracken_kraken_report="${SAMPLE_NAME}.bracken.\${lvl}.krakenreport.txt"
@@ -69,7 +87,7 @@ process Bracken {
         # That one case becomes an explicit below-threshold no-call with the normal file layout
         # (header-only report and mpa); any other Bracken error still fails the task.
         set +e
-        bracken -d "${params.kraken_db}" -i \${REPORT} -o \${bracken_output} -w \${bracken_kraken_report} -r ${params.bracken_read_length} -l \${lvl} -t ${params.bracken_threshold} 2> bracken.\${lvl}.err
+        bracken -d "${params.kraken_db}" -i \${REPORT} -o \${bracken_output} -w \${bracken_kraken_report} -r \${BRACKEN_LEN} -l \${lvl} -t ${params.bracken_threshold} 2> bracken.\${lvl}.err
         bracken_rc=\$?
         set -e
         cat bracken.\${lvl}.err >&2

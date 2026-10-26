@@ -112,7 +112,9 @@ params.tumor_only = false  // have matched tumor/normal, keep both
 params.phase = "auto"
 params.batch_corr_seed = 1
 params.r2_threshold = 0.25
-params.bracken_read_length = 50  // Must match the read length used to build the Bracken database
+params.bracken_read_length = 'auto'  // auto: per sample, the kmer_distrib length closest to the sample's median read
+                                      // length (recorded in <sample>.bracken_read_length.tsv). An integer forces
+                                      // one length for every sample (the old default was a fixed 50).
 // Bracken -t: the minimum reads a taxon needs to be re-estimated -- a THRESHOLD, not a thread
 // count. The committed value was 2; an edit had set it to ${task.cpus}, so abundance output
 // changed with the CPU count and the retry attempt (audit A04, 2026-09-23).
@@ -446,16 +448,21 @@ workflow {
             error "--${name} must be a non-negative integer (got '${v}')"
     }
 
+    if (!(params.bracken_read_length.toString() == 'auto' || (params.bracken_read_length.toString().isInteger() && params.bracken_read_length.toString().toInteger() > 0)))
+        error "--bracken_read_length must be auto or a positive integer (got '${params.bracken_read_length}')"
     if (params.start_from == 'beginning' && !skipClassification) {
         requirePathParam('kraken_db', params.kraken_db, 'for KrakenUniq/Bracken classification')
         requirePathParam('metaphlan_db', params.metaphlan_db, 'for MetaPhlAn 4 classification')
         // Contents, not just existence (audit C17): the files these steps actually open.
         def krakenDir = file(params.kraken_db)
         if (krakenDir.isDirectory()) {
-            ['taxDB', "database${params.bracken_read_length}mers.kmer_distrib"].each { f ->
-                if (!file("${krakenDir}/${f}").exists())
-                    error "--kraken_db ${krakenDir} has no ${f}" +
-                          (f.endsWith('kmer_distrib') ? " (Bracken needs one built for --bracken_read_length ${params.bracken_read_length})" : "")
+            if (!file("${krakenDir}/taxDB").exists())
+                error "--kraken_db ${krakenDir} has no taxDB"
+            if (params.bracken_read_length.toString() == 'auto') {
+                if (!krakenDir.listFiles().any { it.name ==~ /database\d+mers\.kmer_distrib/ })
+                    error "--kraken_db ${krakenDir} has no database<N>mers.kmer_distrib (Bracken needs at least one for --bracken_read_length auto)"
+            } else if (!file("${krakenDir}/database${params.bracken_read_length}mers.kmer_distrib").exists()) {
+                error "--kraken_db ${krakenDir} has no database${params.bracken_read_length}mers.kmer_distrib (Bracken needs one built for --bracken_read_length ${params.bracken_read_length})"
             }
         }
         def mpaDir = file(params.metaphlan_db)
