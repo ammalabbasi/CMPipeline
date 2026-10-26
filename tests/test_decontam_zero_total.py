@@ -141,6 +141,39 @@ class ZeroTotalBehaviour(unittest.TestCase):
         self.assertIn("Known-contaminant list: 95 species; 3 in the input table",
                       open(f"{self.dir}/t.decontamination_summary.txt").read())
 
+    def test_human_and_phix_removed_before_decontam(self):
+        """June-Young's hardcoded_removal_list: not microbes, so not evidence either way."""
+        names = ["Homo_sapiens", "Sinsheimervirus phiX174", "Fusobacterium_nucleatum", "Bacteroides_fragilis",
+                 "Escherichia_coli", "Ralstonia pickettii"]
+        with open(f"{self.dir}/otu.tsv") as f:
+            text = f.read()
+        for j, n in enumerate(names):
+            text = text.replace(f"g__G{j}\t", f"d__X|g__{n.replace(' ', '_').split('_')[0]}|s__{n}\t")
+        with open(f"{self.dir}/otu.tsv", "w") as f:
+            f.write(text)
+        r = self.run_r("--remove_taxa", "Homo sapiens;Sinsheimervirus phiX174", rank="species")
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        with open(f"{self.dir}/t.filter_report.tsv") as f:
+            taxa = {row["taxon_id"] for row in csv.DictReader(f, delimiter="\t")}
+        self.assertFalse(any("Homo" in x or "phiX" in x for x in taxa))
+        self.assertEqual(len(taxa), 4)
+        with open(f"{self.dir}/t.sample_validation.tsv") as f:
+            sv = {row["sample_id"]: row for row in csv.DictReader(f, delimiter="\t")}
+        self.assertGreater(float(sv["S7"]["reads_removed_pre_decontam"]), 0)
+        with open(f"{self.dir}/t.decontamination_summary.txt") as f:
+            summary = f.read()
+        self.assertIn("Removed before decontam (--remove_taxa): d__X|g__Homo|s__Homo_sapiens", summary)
+
+    def test_human_genus_removed_at_genus_rank(self):
+        with open(f"{self.dir}/otu.tsv") as f:
+            text = f.read().replace("g__G0\t", "d__X|g__Homo\t")
+        with open(f"{self.dir}/otu.tsv", "w") as f:
+            f.write(text)
+        r = self.run_r("--remove_taxa", "Homo sapiens;Sinsheimervirus phiX174")
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        with open(f"{self.dir}/t.filter_report.tsv") as f:
+            self.assertNotIn("d__X|g__Homo", {row["taxon_id"] for row in csv.DictReader(f, delimiter="\t")})
+
     def test_known_contaminant_list_not_applied_at_genus_rank(self):
         r = self.run_r("--known_contaminants", str(ROOT / "ref" / "known_contaminants.tsv"))
         self.assertEqual(r.returncode, 0, r.stderr[-800:])

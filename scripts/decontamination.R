@@ -136,7 +136,11 @@ option_list <- list(
   # June-Young's known-contaminant species (ref/known_contaminants.tsv). A FLAG only: listed taxa are
   # marked in filter_report/contaminants_final and their per-sample read share is reported; nothing
   # is removed because of the list.
-  make_option("--known_contaminants", type = "character", default = NULL)
+  make_option("--known_contaminants", type = "character", default = NULL),
+  # Taxa removed from the table BEFORE decontam, ';'-separated species names (June-Young's
+  # hardcoded_removal_list: human and the PhiX spike-in). Not microbes of the sample, so neither
+  # evidence for nor against contamination. At genus rank their genera (first word) are removed.
+  make_option("--remove_taxa", type = "character", default = "")
 )
 
 args <- parse_args(OptionParser(option_list = option_list))
@@ -233,6 +237,20 @@ count_matrix <- do.call(cbind, count_columns)
 rownames(count_matrix) <- taxon_ids
 colnames(count_matrix) <- sample_columns
 storage.mode(count_matrix) <- "numeric"
+
+# Pre-decontam removal (--remove_taxa). Exact names, ignoring case and space/underscore; the last
+# rank of a clade_name (s__ or g__) is what is compared.
+last_rank_name <- function(x) tolower(gsub("[ _]+", " ", trimws(sub(".*\\|?[sg]__", "", x))))
+remove_names <- tolower(gsub("[ _]+", " ", trimws(strsplit(args$remove_taxa, ";", fixed = TRUE)[[1]])))
+remove_names <- remove_names[nzchar(remove_names)]
+if (args$taxonomic_rank == "genus") remove_names <- unique(sub(" .*", "", remove_names))
+removed_taxa <- taxon_ids[last_rank_name(taxon_ids) %in% remove_names]
+removed_reads <- colSums(count_matrix[removed_taxa, , drop = FALSE])
+if (length(removed_taxa) > 0L) {
+  count_matrix <- count_matrix[setdiff(taxon_ids, removed_taxa), , drop = FALSE]
+  taxon_ids <- rownames(count_matrix)
+  if (length(taxon_ids) == 0L) stopf("No taxa left after --remove_taxa")
+}
 
 required_metadata_columns <- c(args$sample_id_column, args$batch_column, args$type_column)
 missing_metadata_columns <- setdiff(required_metadata_columns, names(metadata_raw))
@@ -674,6 +692,8 @@ for (i in seq_len(nrow(sample_validation))) {
 
 # Which included samples were all-zero in the input table (kept as absence evidence).
 sample_validation$zero_total_input <- sample_validation$sample_id %in% zero_total_samples
+sample_validation$reads_removed_pre_decontam <- unname(removed_reads[sample_validation$sample_id])
+sample_validation$reads_removed_pre_decontam[is.na(sample_validation$reads_removed_pre_decontam)] <- 0
 # Share of each sample's input reads (before any filter) on June-Young's list: the per-sample
 # reagent-contamination check (Ludmil, check 16). NA at genus rank or without a list.
 known_reads <- if (flag_known) colSums(count_matrix[is_known, , drop = FALSE]) else NULL
@@ -746,6 +766,8 @@ summary_lines <- c(
   "=======================",
   sprintf("Control role: %s", args$control_role),
   sprintf("Taxonomic rank: %s", args$taxonomic_rank),
+  sprintf("Removed before decontam (--remove_taxa): %s; %s reads",
+          if (length(removed_taxa)) collapse_values(removed_taxa) else "none", format(sum(removed_reads), big.mark = ",")),
   sprintf("Input taxa: %d", nrow(count_matrix)),
   sprintf("Input samples: %d", ncol(count_matrix)),
   sprintf("Zero-total samples: %d (policy %s): kept %d as absence evidence, excluded %d",

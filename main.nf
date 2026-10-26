@@ -258,6 +258,7 @@ params.batch_corr_method = "tune"  // ConQuR mode: "tune" (auto-phased Tune_ConQ
 params.scripts ="${projectDir}/scripts"
 params.decontam_script = "${projectDir}/scripts/decontamination.R"
 params.known_contaminants = "${projectDir}/ref/known_contaminants.tsv"  // June-Young's list: flag only; null = off
+params.decontam_remove_taxa = "Homo sapiens;Sinsheimervirus phiX174"   // removed before decontam ('' = none)
 params.batch_corr_script = "${projectDir}/scripts/2500703_batch_correction_normalization.r"
 
 // ============================================================================
