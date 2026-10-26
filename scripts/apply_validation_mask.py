@@ -2,8 +2,9 @@
 """Alignment validation, step 4: mask the Bracken species table and roll it up to genus.
 
 Per sample, a species' Bracken count is set to 0 ONLY where its validation status is `failed`
-(reads present, but they don't come from that genome). `validated`, `insufficient` and
-`not_in_reference` keep their counts; decontam's own >= 5-read / >= 5%-prevalence filters handle
+(reads present, but they don't come from that genome). `validated`, `validated_group` (confirmed
+only at ANI-group level, e.g. the F. nucleatum group), `insufficient` and `not_in_reference` keep
+their counts; decontam's own >= 5-read / >= 5%-prevalence filters handle
 the weak ones. Group members (e.g. E. coli + Shigella) share their group's status.
 
 Outputs:
@@ -32,7 +33,7 @@ def main(argv=None):
 
     status = {}
     header = None
-    allowed = {"validated", "failed", "unsupported", "insufficient", "not_in_reference"}
+    allowed = {"validated", "validated_group", "failed", "unsupported", "insufficient", "not_in_reference"}
     expected = {(s, groups.get(label_of(species_from_clade(t)), label_of(species_from_clade(t))))
                 for t, counts in table.items() for s in samples if counts[s] > 0}
     seen_samples = set()
@@ -115,7 +116,8 @@ def main(argv=None):
             out.write(clade + "\t" + "\t".join(
                 "absent" if counts[s] == 0 else status.get((s, tax), "unscored") for s in samples) + "\n")
 
-    keys = ("validated", "failed", "unsupported", "insufficient", "not_in_reference", "absent", "unscored")
+    keys = ("validated", "validated_group", "failed", "unsupported", "insufficient", "not_in_reference",
+            "absent", "unscored")
     with open(os.path.join(a.out_dir, "validation_mask_report.tsv"), "w") as out:
         out.write("clade_name\t" + "\t".join(f"n_{k}" for k in keys) + "\treads_removed\n")
         for clade, c in report.items():

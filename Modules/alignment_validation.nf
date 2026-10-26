@@ -47,8 +47,10 @@ process validationSpeciesList {
     // reused; a new month gets a new key and a fresh panel instead of silently replacing the old
     // one. Per-genome summary dates are in validation_reference_manifest.tsv.
     def settings = "max_genomes=${params.validation_max_genomes};ani=${params.validation_dedup_ani};" +
+                   "anchor=${params.validation_anchor_ani};margin=${params.validation_relabel_margin};" +
+                   "group=${params.validation_group_ani};" +
                    "max_missing=${params.validation_max_missing_frac};t2t=GCF_009914755.1;" +
-                   "refseq=${validationSnapshot()};deps=${deps};v4"
+                   "refseq=${validationSnapshot()};deps=${deps};v5"
     """
     ${ToolVersions.record(task, params, 'python')}
     python "${params.scripts}/validation_species_list.py" \\
@@ -89,6 +91,9 @@ process buildValidationRef {
         --cache_dir "${params.validation_cache_dir}/downloads" \\
         --max_genomes ${params.validation_max_genomes} \\
         --dedup_ani ${params.validation_dedup_ani} \\
+        --anchor_ani ${params.validation_anchor_ani} \\
+        --relabel_margin ${params.validation_relabel_margin} \\
+        --group_ani ${params.validation_group_ani} \\
         --max_missing_frac ${params.validation_max_missing_frac} \\
         --snapshot ${validationSnapshot()} \\
         --max_ref_gb ${params.validation_max_ref_gb} \\
@@ -143,6 +148,7 @@ process alignForValidation {
     }.join('\n        ')
     def groups_arg = groups ? "--groups \"${groups}\"" : ""
     def export_arg = params.validation_export_reads.toString() == 'true' ? "--export_reads" : ""
+    def rescue_arg = params.validation_group_rescue_shared.toString() == 'true' ? "--group_rescue_shared" : ""
     // Same rule as host depletion (E0): with -ax sr, minimap2 pairs adjacent mate-named reads, so the
     // result would depend on whether mates arrive interleaved (BAM route) or not (FASTQ route).
     def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''
@@ -163,6 +169,7 @@ process alignForValidation {
             --min_identity ${params.validation_min_identity} \\
             --min_unique_frac ${params.validation_min_unique_frac} \\
             --bins_reads ${params.validation_bins_reads} \\
+            ${rescue_arg} \\
             ${export_arg}
     """
 }

@@ -23,6 +23,8 @@ species table and on its genus roll-up.
 2. **Reference**, built once per species list and cached under `--validation_cache_dir`:
    - up to `--validation_max_genomes` (50) RefSeq genomes per species (Complete Genome if any), de-duplicated at
      `--validation_dedup_ani` (99.5%) with skani
+   - **ANI-curated per genus** (see *Mislabelled genomes and ANI groups* below): genomes filed under the
+     wrong species move to the species they belong to, and close species form fallback groups
    - **human T2T in the same index**, so leftover human reads compete
    - one single-part minimap2 index (the run stops if it would split)
    - every accession and checksum in `validation_reference_manifest.tsv`
@@ -38,6 +40,37 @@ species table and on its genus roll-up.
      `validated` if the 10 kb spread `bins_ratio >= 0.5` and median identity `>= 0.98`; otherwise `failed`,
      with `fail_reason` naming each test
    - `not_in_reference`: no genome in the reference, or Homo_sapiens (never scored)
+   - `validated_group`: see below; kept, confirmed at ANI-group level only
+
+**Mislabelled genomes and ANI groups** (decision 36; check of 6 Oct 2026, decided 26 Oct 2026). RefSeq
+labels are not always right: 4 of the *Fusobacterium* genomes filed as *F. nucleatum* in the CRC50
+reference are *F. animalis* or *F. vincentii* (97-98% median ANI to those species, ~91% to *nucleatum*).
+Each real *animalis* read then ties between two labels, so it is not unique, and the species cannot be
+validated. In a public-genome simulation (25 held-out genomes) the share of unique reads was 39% for
+*F. animalis* and 42% for *F. vincentii* with the filed labels, 85% and 77% after relabelling.
+
+- **Relabel.** Per genus, skani compares every kept genome. A species' *anchor* is the >= 95%
+  (`--validation_anchor_ani`) cluster of its own genomes that holds its first (RefSeq reference) genome. A
+  genome moves to another named species when its median ANI to that anchor is >= 95% and beats its filed
+  species by >= 1.0 (`--validation_relabel_margin`). Within 1.0 of two species it is dropped. Unnamed
+  `sp.` species give genomes but never receive them, and an anchor's first genome never moves. Genomes that
+  match no anchor (`divergent`) stay under their filed species: the 18-genome unnamed genomospecies inside
+  RefSeq's *F. nucleatum* stays there, because KrakenUniq/Bracken can only call its reads *F. nucleatum*.
+  Every decision is in `validation_reference_manifest.tsv` (`filed_label`, `ani_action`, scores).
+- **Groups.** Species whose anchors meet at >= 92% (`--validation_group_ani`; 0 turns groups off) form one
+  ANI group, named after the member with the lowest NCBI taxid. For *Fusobacterium* that is
+  `Fusobacterium_nucleatum_group`: *nucleatum*, *animalis*, *polymorphum*, *vincentii*, *hwasookii* and
+  *canifelinum* (93% would leave *polymorphum* out). In the simulation >= 97% of reads were unique at
+  group level for every species.
+- **Group-level fallback.** A cell whose species-level score is `insufficient` only because too few of its
+  reads are unique (`unique_reads_for_bins`), and whose group, scored as one taxon on the same reads, is
+  `validated`, becomes `validated_group`: the count is kept and the stats name the group (`ani_group`,
+  `group_status`). Identity, spread and depth failures are never rescued. A `failed` cell whose reads are
+  all shared (`unique_fraction`, a "shadow" of a relative) is rescued only with
+  `--validation_group_rescue_shared true`: by default a shadow stays failed, because the group's reads may
+  all belong to the relative.
+
+PRISM, by comparison, takes the NCBI label of each hit as it is and has no group level.
    - pooled over all of a species' genomes: supporting/unique/multi reads, unique fraction, identity;
      best genome only: breadth, bins, `reads_on_best`. `minimap2_count` equals `unique_reads`.
    - E. coli + Shigella are scored as one taxon (`ref/validation_groups.tsv`).
@@ -62,6 +95,10 @@ also writes the reads supporting each validated taxon. Those are sample-derived 
 | `--validation_bins_reads` | `unique` | reads the bins test is computed on: `unique` (reads not shared with another species) or `all` (the 2026-09-23 rule). Shared reads pile into regions conserved with an abundant relative and failed truly present minor species (audit 2026-09-30, V01) |
 | `--validation_max_genomes` | `50` | RefSeq genomes per species, before de-duplication |
 | `--validation_dedup_ani` | `99.5` | skani ANI at which two genomes of a species count as one |
+| `--validation_anchor_ani` | `95` | ANI of a species' anchor cluster, and the bar a mislabelled genome must clear to move |
+| `--validation_relabel_margin` | `1.0` | how much higher a genome's ANI to its new species must be than to its filed one |
+| `--validation_group_ani` | `92` | species whose anchors meet at this ANI form one fallback group; `0` turns groups off |
+| `--validation_group_rescue_shared` | `false` | also rescue `unique_fraction` failures (shadows) at group level |
 | `--validation_max_missing_frac` | `0.10` | the build fails if more than this fraction of species get no genome |
 | `--validation_batch_size` | `20` | samples per alignment task |
 | `--validation_groups` | `ref/validation_groups.tsv` | species scored together as one taxon (E. coli + Shigella) |

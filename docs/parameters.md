@@ -101,6 +101,10 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--validation_bins_reads` | `unique` | reads the bins test is computed on: `unique` (reads not shared with another species) or `all` (the 2026-09-23 rule). Shared reads pile into regions conserved with an abundant relative and failed truly present minor species (audit 2026-09-30, V01) |
 | `--validation_max_genomes` | `50` | RefSeq genomes per species, before de-duplication |
 | `--validation_dedup_ani` | `99.5` | skani ANI at which two genomes of a species count as one |
+| `--validation_anchor_ani` | `95` | ANI of a species' anchor cluster, and the bar a mislabelled genome must clear to move |
+| `--validation_relabel_margin` | `1.0` | how much higher a genome's ANI to its new species must be than to its filed one |
+| `--validation_group_ani` | `92` | species whose anchors meet at this ANI form one fallback group; `0` turns groups off |
+| `--validation_group_rescue_shared` | `false` | also rescue `unique_fraction` failures (shadows) at group level |
 | `--validation_max_missing_frac` | `0.10` | the build fails if more than this fraction of species get no genome |
 | `--validation_max_ref_gb` | 40 | refuse a planned reference larger than this many Gb of sequence, checked from RefSeq genome sizes **before** anything is downloaded or indexed |
 | `--validation_batch_size` | `20` | samples per alignment task |

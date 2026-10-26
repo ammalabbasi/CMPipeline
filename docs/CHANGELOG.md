@@ -4,6 +4,16 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Validation reference is ANI-curated; new `validated_group` status (decision 36).** Genomes RefSeq filed
+  under the wrong species move to the species they belong to (4 *Fusobacterium* "nucleatum" genomes are
+  *animalis*/*vincentii*; 4 *Bacteroides* and 4 *Escherichia* `sp.` genomes are named species). Species
+  whose anchors meet at 92% ANI form a fallback group (*F. nucleatum* group: *nucleatum*, *animalis*,
+  *polymorphum*, *vincentii*, *hwasookii*, *canifelinum*). A cell that is `insufficient` only because its
+  reads are shared, and whose group validates, is `validated_group` (count kept). The unnamed 18-genome
+  cluster inside *F. nucleatum* stays there. **A new reference is built (cache key v5)**, and validation
+  statuses change, mostly for *Fusobacterium*. New stats columns `ani_group`, `group_status`,
+  `group_fail_reason`; `validation_mask_report.tsv` gains `n_validated_group`.
+
 - **Reads extracted from BAM/CRAM are adapter-trimmed again (`--adapter_trim auto`).** Since 16 Sep 2026
   `auto` passed no adapter FASTA for them, assuming aligned reads were trimmed. GDC did not trim TCGA, and
   bwa soft-clips adapter read-through, so it reached KrakenUniq as *synthetic construct*. `auto` now uses a

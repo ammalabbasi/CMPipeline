@@ -188,6 +188,10 @@ params.validation_min_unique_frac = 0.05  // unique / (unique + shared) reads; 0
 params.validation_bins_reads = 'unique'   // reads the bins test uses: unique (default) | all (2026-09-23 rule)
 params.validation_max_genomes = 50        // RefSeq genomes per species, before de-duplication
 params.validation_dedup_ani = 99.5        // skani ANI at which two genomes of a species are one
+params.validation_anchor_ani = 95         // species anchor cluster, and the bar a mislabelled genome must clear to move
+params.validation_relabel_margin = 1.0    // ...and by how much ANI its new species must beat its filed one
+params.validation_group_ani = 92          // species whose anchors meet at this ANI form one fallback group (0 = off)
+params.validation_group_rescue_shared = false  // also rescue unique_fraction failures (shadows) at group level
 params.validation_max_missing_frac = 0.10 // fail if more species than this get no genome
 params.validation_max_ref_gb = 40         // refuse a planned reference above this many Gb, before downloading (audit B05)
 params.validation_batch_size = 20         // samples per alignment task (index loads once each)
@@ -378,6 +382,7 @@ workflow {
     boolParam('save_intermediates', params.save_intermediates)
     boolParam('tumor_only', params.tumor_only)
     boolParam('validation_export_reads', params.validation_export_reads)
+    boolParam('validation_group_rescue_shared', params.validation_group_rescue_shared)
 
     // Channels feeding the cohort QC summary. Collected as the branches run, because
     // which artefacts exist depends on which stages were asked for.
@@ -447,6 +452,12 @@ workflow {
          validation_max_missing_frac: params.validation_max_missing_frac].each { name, v ->
             def x = v.toString().isNumber() ? v.toString().toDouble() : -1
             if (x < 0 || x > 1) error "--${name} must be a number in [0, 1] (got '${v}')"
+        }
+        [validation_anchor_ani: params.validation_anchor_ani,
+         validation_group_ani: params.validation_group_ani,
+         validation_relabel_margin: params.validation_relabel_margin].each { name, v ->
+            def x = v.toString().isNumber() ? v.toString().toDouble() : -1
+            if (x < 0 || x > 100) error "--${name} must be a number in [0, 100] (got '${v}')"
         }
         if (!(params.validation_bins_reads.toString() in ['unique', 'all'])) {
             error "--validation_bins_reads must be 'unique' or 'all' (got '${params.validation_bins_reads}')"
@@ -832,8 +843,7 @@ workflow {
             qcParts << extractReads.out.counts   // *.extract_counts.tsv: BAM/CRAM library denominator (C07)
             qcParts << extractReads.out.aligner  // *.upstream_aligner.tsv: @PG aligner/-T and low-AS mode (L8)
             qcParts << extractReads.out.provenance  // *.input_provenance.tsv: @SQ fingerprint, @PG chain (X13)
-            // `pretrimmed` marks reads that came out of an aligned BAM/CRAM. They are NOT
-            // necessarily adapter-free (GDC did not trim); they get the short adapter list.
+            // `pretrimmed`: reads extracted from a BAM/CRAM (not necessarily adapter-free).
             INPUTS_BY_TYPE.fastq
                 .map { sampleID, inputType, reads, references -> tuple(sampleID, reads, false) }
                 .mix(EXTRACTED_READS.map { sampleID, reads -> tuple(sampleID, reads, true) })
@@ -842,15 +852,8 @@ workflow {
             // Perform FastQC on the extracted fastq files
             FASTQC1(UNMAPPED_READS.map { sampleID, reads, pretrimmed -> tuple(sampleID, reads) })
 
-            // adapter_trim: `auto` scans raw FASTQ against --adapters (234 sequences) and reads
-            // extracted from an alignment against --adapters_core (5 Illumina sequences).
-            // The full list is too slow for BAM/CRAM reads: 2 h 50 m vs 3 m 15 s on one aligned
-            // CRAM. Skipping the scan altogether (as before 2026-10-26) left adapter read-through
-            // in: GDC does not trim before bwa, which soft-clips adapters, so extracted reads
-            // still carry them. On synthetic reads (fastp 1.3.7) the core list found all
-            // planted adapters at 3x the no-list time, the full list at 130x.
-            // `always` uses the full list for every sample; `never` passes none (fastp still
-            // auto-detects one adapter per read).
+            // adapter_trim auto: FASTQ -> --adapters (234 seqs); BAM/CRAM reads -> --adapters_core (5), since
+            // GDC did not trim before bwa. Measurements: docs/running/classification.md#adapter-trimming.
             UNMAPPED_READS
                 .map { sampleID, reads, pretrimmed ->
                     def adapterFasta = adapterTrimMode == 'always' ? params.adapters.toString() :

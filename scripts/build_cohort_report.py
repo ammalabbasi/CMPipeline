@@ -307,7 +307,7 @@ def validation_section(path):
     if not rep:
         return ""
     tot = {k: sum(int(float(r.get(k) or 0)) for r in rep)
-           for k in ("n_validated", "n_failed", "n_unsupported", "n_insufficient", "n_not_in_reference",
+           for k in ("n_validated", "n_validated_group", "n_failed", "n_unsupported", "n_insufficient", "n_not_in_reference",
                      "n_unscored")}
     removed = sum(float(r.get("reads_removed") or 0) for r in rep)
     for r in rep:
@@ -317,6 +317,7 @@ def validation_section(path):
     worst = sorted((r for r in rep if r["n_zeroed"] > 0),
                    key=lambda r: (-r["n_zeroed"], -float(r["reads_removed"] or 0)))[:20]
     tiles = (f"<p class=\"lede\">Sample &times; species cells: <b>{tot['n_validated']:,}</b> validated, "
+             f"<b>{tot['n_validated_group']:,}</b> validated at ANI-group level only (kept), "
              f"<b>{tot['n_failed']:,}</b> failed and <b>{tot['n_unsupported']:,}</b> unsupported "
              f"(Bracken count set to 0), <b>{tot['n_insufficient']:,}</b> "
              f"insufficient (kept), <b>{tot['n_not_in_reference']:,}</b> not in the reference (kept), "
@@ -328,6 +329,7 @@ def validation_section(path):
          ("n_failed", "Samples failed", fmt_int),
          ("n_unsupported", "Unsupported", fmt_int),
          ("n_validated", "Validated", fmt_int),
+         ("n_validated_group", "Group level", fmt_int),
          ("n_insufficient", "Insufficient", fmt_int),
          ("reads_removed", "Reads removed", fmt_int)],
         "Alignment validation: most-failed species",

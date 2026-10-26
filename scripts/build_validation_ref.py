@@ -10,21 +10,26 @@ DB was built):
   * downloaded from NCBI with retries and a full gzip integrity check
   * de-duplicated within species with skani: a genome is dropped if it is >= --dedup_ani to one
     already kept (so the reference genome, first in line, is always kept)
+  * ANI-curated per genus (validation_ani.py): genomes filed under the wrong species are moved
+    to the species they belong to, and species whose anchors meet at >= --group_ani form an ANI
+    group, the scorer's fallback level
 Human T2T-CHM13v2.0 is added to the same reference so leftover human reads compete.
 
 Outputs (in --out_dir):
   validation_reference.fna     all contigs, named <label>|<accession>|<contig>
-  contig_labels.tsv            contig, label, accession, length
+  contig_labels.tsv            contig, label, accession, length, ani_group ('' when ungrouped)
   validation_reference_manifest.tsv   one row per genome: label, species, taxid, accession,
-                               assembly_level, refseq_category, md5, url, source summary date
+                               assembly_level, refseq_category, md5, url, source summary date,
+                               filed_label, ani_action, ani_score_own, ani_best_label, ani_score_best
   missing_species.tsv          species that got no genome, and why
 The run fails if more than --max_missing_frac of species got no genome.
 """
-import argparse, concurrent.futures as cf, csv, datetime as dt, gzip, hashlib, os, random, shutil
+import argparse, collections, concurrent.futures as cf, csv, datetime as dt, gzip, hashlib, os, random, shutil
 import subprocess, sys, tempfile, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validation_common import HUMAN_LABEL
+import validation_ani
 
 NCBI = "https://ftp.ncbi.nlm.nih.gov/genomes/refseq"
 GROUPS = ("bacteria", "archaea", "fungi", "protozoa")
@@ -134,6 +139,54 @@ def dedup(label, files, skani, ani, threads, tmp):
     return kept
 
 
+def skani_pairs(files, skani, threads, tmp, name):
+    """skani triangle -E over files -> {(file_a, file_b): ani}, both orders."""
+    if len(files) < 2:
+        return {}
+    lst = os.path.join(tmp, name + ".list")
+    with open(lst, "w") as fh:
+        fh.write("\n".join(files) + "\n")
+    out = subprocess.run([skani, "triangle", "-l", lst, "-E", "-t", str(threads)],
+                         capture_output=True, text=True, check=True).stdout.splitlines()
+    pair = {}
+    for line in out[1:]:
+        p = line.split("\t")
+        pair[(p[0], p[1])] = pair[(p[1], p[0])] = float(p[2])
+    return pair
+
+
+def ani_curate(kept_rows, skani, threads, tmp, anchor_ani, margin, group_ani):
+    """Relabel and group per genus (validation_ani.py). -> (rows with their final label, {label: group},
+    {accession: relabel record}). Dropped genomes are left out of the returned rows."""
+    by_genus = collections.defaultdict(list)
+    for item in kept_rows:
+        by_genus[validation_ani.genus_of(item[0]["label"])].append(item)
+    final, group_of, record = [], {}, {}
+    for genus, items in sorted(by_genus.items()):
+        if len({i[0]["label"] for i in items}) < 2:
+            final += [(i[0]["label"],) + i for i in items]
+            continue
+        pair = skani_pairs([i[3] for i in items], skani, threads, tmp, "genus_" + genus)
+        acc_of = {i[3]: i[1]["assembly_accession"] for i in items}
+        ani = {(acc_of[a], acc_of[b]): v for (a, b), v in pair.items()}
+        genomes = [(i[1]["assembly_accession"], i[0]["label"]) for i in items]
+        for r in validation_ani.relabel(genomes, ani, anchor_ani, margin):
+            record[r["accession"]] = r
+        moved = []
+        for i in items:
+            r = record[i[1]["assembly_accession"]]
+            if r["label"]:
+                moved.append((r["label"],) + i)
+        final += moved
+        taxid_of = {i[0]["label"]: i[0]["taxid"] for i in items}
+        group_of.update(validation_ani.groups([(m[2]["assembly_accession"], m[0]) for m in moved],
+                                              ani, taxid_of, anchor_ani, group_ani))
+    acts = collections.Counter(r["action"] for r in record.values())
+    print("ANI curation: " + (", ".join(f"{k}={v}" for k, v in sorted(acts.items())) or "no multi-species genus")
+          + f"; {len(set(group_of.values()))} ANI group(s) at {group_ani:g}%")
+    return final, group_of, record
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", required=True)
@@ -146,6 +199,12 @@ def main(argv=None):
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--skani", default="skani")
     ap.add_argument("--seed", type=int, default=20260923)
+    ap.add_argument("--anchor_ani", type=float, default=95.0,
+                    help="ANI that defines a species' anchor cluster and the bar for relabelling")
+    ap.add_argument("--relabel_margin", type=float, default=1.0,
+                    help="a genome moves only if its new species beats its filed one by this much ANI")
+    ap.add_argument("--group_ani", type=float, default=92.0,
+                    help="species whose anchors meet at this ANI form one fallback group (0 = none)")
     ap.add_argument("--max_ref_gb", type=float, default=40,
                     help="refuse a planned reference larger than this many Gb of sequence (audit B05)")
     ap.add_argument("--snapshot", default=None, help="RefSeq snapshot month (YYYY-MM) in the cache key")
@@ -200,49 +259,73 @@ def main(argv=None):
     for label, items in by_label.items():
         files = dedup(label, [i[3] for i in items], a.skani, a.dedup_ani, a.threads, tmp)
         kept_rows += [i for i in items if i[3] in files]
+    final_rows, group_of, ani_record = ani_curate(kept_rows, a.skani, a.threads, tmp, a.anchor_ani,
+                                                  a.relabel_margin, a.group_ani)
+    if a.group_ani <= 0:
+        group_of = {}
     shutil.rmtree(tmp)
+    # An unnamed "sp." species whose every genome moved to a named one leaves the reference.
+    still = {r[0] for r in final_rows}
+    for s in species:
+        if s["label"] in by_label and s["label"] not in still:
+            to = sorted({rec["label"] for rec in ani_record.values() if rec["filed_label"] == s["label"]} - {""})
+            missing.append((s, "every genome relabelled by ANI to " + (", ".join(to) or "none (dropped)")))
 
     os.makedirs(a.out_dir, exist_ok=True)
     fna = open(os.path.join(a.out_dir, "validation_reference.fna"), "w")
     labels = open(os.path.join(a.out_dir, "contig_labels.tsv"), "w")
-    labels.write("contig\tlabel\taccession\tlength\n")
+    labels.write("contig\tlabel\taccession\tlength\tani_group\n")
 
     def emit(path, label, acc):
         name, n = None, 0
+        grp = group_of.get(label, "")
         with gzip.open(path, "rt") as fh:
             for line in fh:
                 if line.startswith(">"):
                     if name:
-                        labels.write(f"{name}\t{label}\t{acc}\t{n}\n")
+                        labels.write(f"{name}\t{label}\t{acc}\t{n}\t{grp}\n")
                     name, n = f"{label}|{acc}|{line[1:].split()[0]}", 0
                     fna.write(f">{name}\n")
                 else:
                     n += len(line.strip()); fna.write(line)
         if name:
-            labels.write(f"{name}\t{label}\t{acc}\t{n}\n")
+            labels.write(f"{name}\t{label}\t{acc}\t{n}\t{grp}\n")
 
     with open(os.path.join(a.out_dir, "validation_reference_manifest.tsv"), "w") as man:
+        # label = the label the genome is scored under; filed_label = RefSeq's. Dropped genomes
+        # (drop_ambig) are listed with an empty label and are not in the reference.
         man.write("label\tspecies\ttaxid\tmatched_by\taccession\tassembly_level\trefseq_category\t"
-                  "md5\turl\tsummary_date\n")
+                  "md5\turl\tsummary_date\tfiled_label\tani_action\tani_score_own\tani_best_label\t"
+                  "ani_score_best\n")
+        final_label = {r[2]["assembly_accession"]: r[0] for r in final_rows}
         for s, r, url, dest, how in kept_rows:
-            emit(dest, s["label"], r["assembly_accession"])
-            man.write(f"{s['label']}\t{s['species']}\t{s['taxid']}\t{how}\t{r['assembly_accession']}\t"
-                      f"{r['assembly_level']}\t{r['refseq_category']}\t{md5(dest)}\t{url}\t{dates[r['_group']]}\n")
+            acc = r["assembly_accession"]
+            rec = ani_record.get(acc)
+            label = final_label.get(acc, "")
+            if label:
+                emit(dest, label, acc)
+            ani_cols = (f"{rec['action']}\t{rec['score_own']:.2f}\t{rec['best_label']}\t{rec['score_best']:.2f}"
+                        if rec else "NA\tNA\tNA\tNA")
+            man.write(f"{label}\t{s['species']}\t{s['taxid']}\t{how}\t{acc}\t"
+                      f"{r['assembly_level']}\t{r['refseq_category']}\t{md5(dest)}\t{url}\t{dates[r['_group']]}\t"
+                      f"{s['label']}\t{ani_cols}\n")
         emit(t2t, HUMAN_LABEL, "GCF_009914755.1")
         man.write(f"{HUMAN_LABEL}\tHomo sapiens\t9606\tfixed\tGCF_009914755.1\tComplete Genome\t"
-                  f"reference genome\t{md5(t2t)}\t{T2T_URL}\tNA\n")
+                  f"reference genome\t{md5(t2t)}\t{T2T_URL}\tNA\t{HUMAN_LABEL}\tNA\tNA\tNA\tNA\n")
     fna.close(); labels.close()
 
     with open(os.path.join(a.out_dir, "missing_species.tsv"), "w") as out:
         out.write("label\tspecies\ttaxid\treason\n")
         for s, why in missing:
             out.write(f"{s['label']}\t{s['species']}\t{s['taxid']}\t{why}\n")
-    n_genomes = len(kept_rows)
-    frac = len(missing) / len(species) if species else 0
+    n_genomes = len(final_rows)
+    # labels that left by ANI relabelling are listed but are not missing genomes
+    n_missing = sum(1 for _, why in missing if not why.startswith("every genome relabelled"))
+    frac = n_missing / len(species) if species else 0
     print(f"reference: {n_genomes} genomes for {len(by_label)} species (+ human T2T); "
-          f"{len(missing)} species missing ({frac:.1%}); {len(plan) - n_genomes} dropped as duplicates or failed")
+          f"{n_missing} species missing ({frac:.1%}); {len(plan) - n_genomes} dropped as duplicates or failed")
     if frac > a.max_missing_frac:
-        sys.exit(f"ERROR: {len(missing)} of {len(species)} species ({frac:.1%}) got no genome, above "
+        sys.exit(f"ERROR: {n_missing} of {len(species)} species ({frac:.1%}) got no genome, above "
                  f"--validation_max_missing_frac {a.max_missing_frac:g}; see missing_species.tsv")
 
 

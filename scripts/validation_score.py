@@ -46,6 +46,13 @@ Status, tested in this order (thresholds are arguments; defaults from the 2026-0
   validated         bins_ratio >= --min_bins_ratio and identity >= --min_identity
   failed            otherwise; fail_reason lists every test that failed
   not_in_reference  the taxon has no genome in the validation reference, or is Homo_sapiens
+  validated_group   (after the above) the taxon is in an ANI group (contig_labels.tsv column 5, built at
+                    --group_ani by build_validation_ref.py), its species-level cell could not be judged only
+                    because its reads are shared with a group relative (insufficient: unique_reads_for_bins;
+                    with --group_rescue_shared also failed: unique_fraction alone), and the same reads score
+                    `validated` with the whole group as one taxon. The count is kept; the cell is confirmed
+                    at group level (ani_group, group_status), not at species level. Identity, spread and
+                    depth failures are never rescued.
 
 With --export_reads, reads supporting a VALIDATED taxon are written (original orientation) to a
 gzipped FASTA, headers  >read_name taxon=<label>. These are sample-derived reads: protected data.
@@ -116,6 +123,8 @@ def main(argv=None):
     ap.add_argument("--bins_reads", choices=("unique", "all"), default="unique",
                     help="reads the bins test is computed on (default unique; 'all' = 2026-09-23 rule)")
     ap.add_argument("--bin_size", type=int, default=10_000)
+    ap.add_argument("--group_rescue_shared", action="store_true",
+                    help="also rescue cells failed on unique_fraction alone (shadows of a relative) at group level")
     ap.add_argument("--export_reads", action="store_true",
                     help="write <sample>.validated_reads.fasta.gz (reads supporting validated taxa)")
     a = ap.parse_args(argv)
@@ -129,13 +138,20 @@ def main(argv=None):
     genome_len = collections.Counter()
     contig_lens = collections.defaultdict(list)
     ref_taxa = set()
+    ani_group = {}                     # taxon -> ANI group (references built before 2026-10-26 have none)
     with open(a.contigs) as fh:
         fh.readline()
         for line in fh:
-            contig, label, acc, n = line.rstrip("\n").split("\t")[:4]
+            f = line.rstrip("\n").split("\t")
+            contig, label, acc, n = f[:4]
             genome_len[acc] += int(n)
             contig_lens[acc].append(int(n))
             ref_taxa.add(taxon(label))
+            if len(f) > 4 and f[4]:
+                ani_group[taxon(label)] = f[4]
+    def group_taxon(label):
+        t = taxon(label)
+        return ani_group.get(t, t)
 
     table_samples, table = read_species_table(a.species_table)
     wanted = [a.sample] if a.sample else [x for x in a.samples.split(",") if x]
@@ -144,6 +160,13 @@ def main(argv=None):
         sys.exit(f"ERROR: sample(s) not columns of {a.species_table}: {', '.join(absent)}")
 
     scorers = {x: SampleScorer(x, a, taxon, table, genome_len, contig_lens, ref_taxa) for x in wanted}
+    # Group level: the same reads, scored with each ANI group as one taxon. Only reads that touch a
+    # grouped taxon are kept there, so ungrouped taxa cost no memory twice.
+    group_scorers = ({x: SampleScorer(x, a, group_taxon, table, genome_len, contig_lens,
+                                      {group_taxon(t) for t in ref_taxa}, only=set(ani_group.values()))
+                      for x in wanted} if ani_group else {})
+    for x, s in scorers.items():
+        s.group_scorer, s.ani_group = group_scorers.get(x), ani_group
     done = set()
     current = None
     sam = sys.stdin if a.sam == "-" else open(a.sam)
@@ -167,6 +190,8 @@ def main(argv=None):
                 scorers[current].finish(); done.add(current)
             current = smp
         scorers[smp].add_read(qname, cur[1], cur[2], alns)
+        if smp in group_scorers:
+            group_scorers[smp].add_read(qname, cur[1], cur[2], alns)
 
     for line in sam:
         if line.startswith("@"):
@@ -199,14 +224,16 @@ def main(argv=None):
 COLS = ["sample", "taxon", "members", "bracken_reads", "minimap2_count", "supporting_reads", "unique_reads",
         "multi_reads", "unique_fraction", "best_genome", "reads_on_best", "genome_len",
         "observed_breadth", "expected_breadth", "breadth_ratio", "bins_hit", "bins_expected",
-        "bins_ratio", "median_identity", "status", "fail_reason", "bins_reads", "reads_for_bins"]
+        "bins_ratio", "median_identity", "status", "fail_reason", "bins_reads", "reads_for_bins",
+        "ani_group", "group_status", "group_fail_reason"]
 
 
 class SampleScorer:
     """Accumulates one sample's reads; finish() writes its stats (and exported reads)."""
 
-    def __init__(self, sample, a, taxon, table, genome_len, contig_lens, ref_taxa):
-        self.sample, self.a, self.taxon = sample, a, taxon
+    def __init__(self, sample, a, taxon, table, genome_len, contig_lens, ref_taxa, only=None):
+        self.sample, self.a, self.taxon, self.only = sample, a, taxon, only
+        self.group_scorer, self.ani_group = None, {}
         self.genome_len, self.contig_lens, self.ref_taxa = genome_len, contig_lens, ref_taxa
         self.bracken = collections.Counter(); self.members = collections.defaultdict(set)
         for clade, counts in table.items():
@@ -217,7 +244,7 @@ class SampleScorer:
         # (taxon, accession) -> list of (contig, start, end, identity, fragment_name, read_len, unique)
         # unique: every best hit of the read is on this taxon (no tie with another taxon)
         self.support = collections.defaultdict(list)
-        self.tmpdir = tempfile.mkdtemp(prefix="valreads_") if a.export_reads else None
+        self.tmpdir = tempfile.mkdtemp(prefix="valreads_") if a.export_reads and only is None else None
         self.handles = {}
 
     def add_read(self, qname, seq, rev, alns):
@@ -227,6 +254,8 @@ class SampleScorer:
         best = max(x[0] for x in alns)
         top = [x for x in alns if x[0] == best]
         taxa = {taxon(x[1].split("|", 1)[0]) for x in top}
+        if self.only is not None and not taxa & self.only:
+            return
         for t in taxa:
             hit = next((x for x in top if taxon(x[1].split("|", 1)[0]) == t and x[4]),
                        next(x for x in top if taxon(x[1].split("|", 1)[0]) == t))
@@ -246,97 +275,28 @@ class SampleScorer:
                 self.multi[t] += 1
 
     def finish(self):
-        a, uniq, multi, support = self.a, self.uniq, self.multi, self.support
+        a = self.a
         for h in self.handles.values():
             h.close()
+        rows = self.score()
+        groups = {r["taxon"]: r for r in self.group_scorer.score()} if self.group_scorer else {}
         validated = []
         with open(os.path.join(a.out_dir, f"{self.sample}.validation_stats.tsv"), "w") as out:
             out.write("\t".join(COLS) + "\n")
-            for t in sorted(self.bracken, key=lambda k: -self.bracken[k]):
-                if self.bracken[t] <= 0:
-                    continue
-                row = dict(sample=self.sample, taxon=t, members=",".join(sorted(self.members[t])),
-                           bracken_reads=f"{self.bracken[t]:g}", minimap2_count=uniq[t],
-                           unique_reads=uniq[t], multi_reads=multi[t])
-                sup = [(len(v), acc) for (tt, acc), v in support.items() if tt == t]
-                row["supporting_reads"] = sum(n for n, _ in sup)
-                tot = uniq[t] + multi[t]
-                row["unique_fraction"] = f"{uniq[t] / tot:.4f}" if tot else "NA"
-                fail = []
-                # Human is in the index only as the competitor that soaks up host reads; a Homo_sapiens
-                # row in a pass-through / --skip_consensus table is never scored or masked (audit B09).
-                # Bracken reported enough reads to test (>= min_support), yet alignment backs almost
-                # none of them: the species is not supported, and its count is zeroed like `failed`
-                # (decision 29; PRISM excludes taxa with < 10 uniquely confirmed reads).
-                tested = self.bracken[t] >= a.min_support
-                if t not in self.ref_taxa or t == HUMAN_LABEL:
-                    status = "not_in_reference"
-                elif not sup:
-                    status = "unsupported" if tested else "insufficient"
-                    if tested:
-                        fail.append(f"supporting_reads<{a.min_confirmed}")
-                else:
-                    n, acc = max(sup)
-                    hits = support[(t, acc)]
-                    by_contig = collections.defaultdict(list); frag_bin = {}
-                    for c, st, en, ident, q, rl, u in hits:
-                        by_contig[c].append((st, en))
-                    # Spread is judged on the reads the taxon does not share (audit V01), unless
-                    # --bins_reads all. Breadth (reported only) and identity still use every read.
-                    bhits = [h for h in hits if h[6]] if a.bins_reads == "unique" else hits
-                    nb = len(bhits)
-                    for c, st, en, ident, q, rl, u in bhits:
-                        frag_bin.setdefault(q.rsplit("/", 1)[0], (c, st // a.bin_size))
-                    G = self.genome_len[acc]
-                    L = sum(h[5] for h in hits) / len(hits)
-                    obs = sum(merged_length(v) for v in by_contig.values()) / G
-                    exp = 1 - math.exp(-n * L / G)
-                    be = bins_expected(self.contig_lens[acc], G, len(frag_bin), a.bin_size)
-                    bins_ratio = len(set(frag_bin.values())) / be if be else float("nan")
-                    med = median([h[3] for (tt, _), v in support.items() if tt == t for h in v])
-                    ufrac = uniq[t] / tot if tot else 0.0
-                    row.update(best_genome=acc, reads_on_best=n, genome_len=G,
-                               observed_breadth=f"{obs:.6f}", expected_breadth=f"{exp:.6f}",
-                               breadth_ratio=f"{obs / exp:.4f}" if exp else "NA",
-                               bins_hit=len(set(frag_bin.values())), bins_expected=f"{be:.2f}",
-                               bins_ratio=f"{bins_ratio:.4f}", median_identity=f"{med:.4f}",
-                               bins_reads=a.bins_reads, reads_for_bins=nb)
-                    total = row["supporting_reads"]
-                    # Order matters (audit B03, 2026-09-23). A shadow -- every read shared with
-                    # another taxon -- is detectable from all its supporting reads, however
-                    # thinly they spread over its many strain genomes. Spread and identity need
-                    # depth on ONE genome, gated exactly as in the benchmark (reads on best).
-                    if total < a.min_support:
-                        if tested and total < a.min_confirmed:
-                            status = "unsupported"
-                            fail.append(f"supporting_reads<{a.min_confirmed}")
-                        else:
-                            status = "insufficient"
-                    elif not ufrac >= a.min_unique_frac:
-                        fail.append(f"unique_fraction<{a.min_unique_frac:g}")
-                        status = "failed"
-                    elif n < a.min_support:
-                        status = "insufficient"
-                    else:
-                        # Identity pools every supporting read of the taxon, so it is judged at the same
-                        # depth as before. Only spread needs the taxon's own (unique) reads: with too
-                        # few of them the cell cannot be validated, but a wrong label still fails on
-                        # identity (2026-09-30 re-score: 473 identity failures had escaped as insufficient).
-                        if not med >= a.min_identity:
-                            fail.append(f"identity<{a.min_identity:g}")
-                        if nb >= a.min_support and not bins_ratio >= a.min_bins_ratio:
-                            fail.append(f"bins_ratio<{a.min_bins_ratio:g}")
-                        if fail:
-                            status = "failed"
-                        elif nb < a.min_support:
-                            status = "insufficient"
-                            fail.append(f"unique_reads_for_bins<{a.min_support}")
-                        else:
-                            status = "validated"
-                if status == "validated":
-                    validated.append(t)
-                row["status"] = status
-                row["fail_reason"] = ";".join(fail)
+            for row in rows:
+                g = self.ani_group.get(row["taxon"])
+                if g and g in groups:
+                    grow = groups[g]
+                    row.update(ani_group=g, group_status=grow["status"], group_fail_reason=grow["fail_reason"])
+                    reasons = row["fail_reason"].split(";") if row["fail_reason"] else []
+                    shared_only = (row["status"] == "insufficient" and reasons and
+                                   all(r.startswith("unique_reads_for_bins<") for r in reasons)) or \
+                                  (a.group_rescue_shared and row["status"] == "failed" and reasons and
+                                   all(r.startswith("unique_fraction<") for r in reasons))
+                    if shared_only and grow["status"] == "validated":
+                        row["status"] = "validated_group"
+                if row["status"] == "validated":
+                    validated.append(row["taxon"])
                 out.write("\t".join(str(row.get(c, "NA")) for c in COLS) + "\n")
         if self.tmpdir:
             with gzip.open(os.path.join(a.out_dir, f"{self.sample}.validated_reads.fasta.gz"), "wt") as out:
@@ -346,6 +306,98 @@ class SampleScorer:
                             shutil.copyfileobj(fh, out)
             shutil.rmtree(self.tmpdir)
         self.support.clear()                  # free memory before the next sample
+        if self.group_scorer:
+            self.group_scorer.support.clear()
+
+    def score(self):
+        """One row dict per taxon with a positive Bracken count, in Bracken order."""
+        a, uniq, multi, support = self.a, self.uniq, self.multi, self.support
+        rows = []
+        for t in sorted(self.bracken, key=lambda k: -self.bracken[k]):
+            if self.bracken[t] <= 0:
+                continue
+            row = dict(sample=self.sample, taxon=t, members=",".join(sorted(self.members[t])),
+                       bracken_reads=f"{self.bracken[t]:g}", minimap2_count=uniq[t],
+                       unique_reads=uniq[t], multi_reads=multi[t])
+            sup = [(len(v), acc) for (tt, acc), v in support.items() if tt == t]
+            row["supporting_reads"] = sum(n for n, _ in sup)
+            tot = uniq[t] + multi[t]
+            row["unique_fraction"] = f"{uniq[t] / tot:.4f}" if tot else "NA"
+            fail = []
+            # Human is in the index only as the competitor that soaks up host reads; a Homo_sapiens
+            # row in a pass-through / --skip_consensus table is never scored or masked (audit B09).
+            # Bracken reported enough reads to test (>= min_support), yet alignment backs almost
+            # none of them: the species is not supported, and its count is zeroed like `failed`
+            # (decision 29; PRISM excludes taxa with < 10 uniquely confirmed reads).
+            tested = self.bracken[t] >= a.min_support
+            if t not in self.ref_taxa or t == HUMAN_LABEL:
+                status = "not_in_reference"
+            elif not sup:
+                status = "unsupported" if tested else "insufficient"
+                if tested:
+                    fail.append(f"supporting_reads<{a.min_confirmed}")
+            else:
+                n, acc = max(sup)
+                hits = support[(t, acc)]
+                by_contig = collections.defaultdict(list); frag_bin = {}
+                for c, st, en, ident, q, rl, u in hits:
+                    by_contig[c].append((st, en))
+                # Spread is judged on the reads the taxon does not share (audit V01), unless
+                # --bins_reads all. Breadth (reported only) and identity still use every read.
+                bhits = [h for h in hits if h[6]] if a.bins_reads == "unique" else hits
+                nb = len(bhits)
+                for c, st, en, ident, q, rl, u in bhits:
+                    frag_bin.setdefault(q.rsplit("/", 1)[0], (c, st // a.bin_size))
+                G = self.genome_len[acc]
+                L = sum(h[5] for h in hits) / len(hits)
+                obs = sum(merged_length(v) for v in by_contig.values()) / G
+                exp = 1 - math.exp(-n * L / G)
+                be = bins_expected(self.contig_lens[acc], G, len(frag_bin), a.bin_size)
+                bins_ratio = len(set(frag_bin.values())) / be if be else float("nan")
+                med = median([h[3] for (tt, _), v in support.items() if tt == t for h in v])
+                ufrac = uniq[t] / tot if tot else 0.0
+                row.update(best_genome=acc, reads_on_best=n, genome_len=G,
+                           observed_breadth=f"{obs:.6f}", expected_breadth=f"{exp:.6f}",
+                           breadth_ratio=f"{obs / exp:.4f}" if exp else "NA",
+                           bins_hit=len(set(frag_bin.values())), bins_expected=f"{be:.2f}",
+                           bins_ratio=f"{bins_ratio:.4f}", median_identity=f"{med:.4f}",
+                           bins_reads=a.bins_reads, reads_for_bins=nb)
+                total = row["supporting_reads"]
+                # Order matters (audit B03, 2026-09-23). A shadow -- every read shared with
+                # another taxon -- is detectable from all its supporting reads, however
+                # thinly they spread over its many strain genomes. Spread and identity need
+                # depth on ONE genome, gated exactly as in the benchmark (reads on best).
+                if total < a.min_support:
+                    if tested and total < a.min_confirmed:
+                        status = "unsupported"
+                        fail.append(f"supporting_reads<{a.min_confirmed}")
+                    else:
+                        status = "insufficient"
+                elif not ufrac >= a.min_unique_frac:
+                    fail.append(f"unique_fraction<{a.min_unique_frac:g}")
+                    status = "failed"
+                elif n < a.min_support:
+                    status = "insufficient"
+                else:
+                    # Identity pools every supporting read of the taxon, so it is judged at the same
+                    # depth as before. Only spread needs the taxon's own (unique) reads: with too
+                    # few of them the cell cannot be validated, but a wrong label still fails on
+                    # identity (2026-09-30 re-score: 473 identity failures had escaped as insufficient).
+                    if not med >= a.min_identity:
+                        fail.append(f"identity<{a.min_identity:g}")
+                    if nb >= a.min_support and not bins_ratio >= a.min_bins_ratio:
+                        fail.append(f"bins_ratio<{a.min_bins_ratio:g}")
+                    if fail:
+                        status = "failed"
+                    elif nb < a.min_support:
+                        status = "insufficient"
+                        fail.append(f"unique_reads_for_bins<{a.min_support}")
+                    else:
+                        status = "validated"
+            row["status"] = status
+            row["fail_reason"] = ";".join(fail)
+            rows.append(row)
+        return rows
 
 
 if __name__ == "__main__":
