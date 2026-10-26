@@ -9,5 +9,5 @@ channels:
 dependencies:
   - python=3.11
   - metaphlan=4.1.1
-  - bowtie2=2.5.4
-  - samtools=1.21
+  - bowtie2=2.5.5
+  - samtools=1.24

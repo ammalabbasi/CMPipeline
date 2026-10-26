@@ -57,9 +57,9 @@ class InputNormalizationTests(unittest.TestCase):
 
     def test_environment_specs_are_minimal(self):
         expected = {
-            "samtools_env.yml": {"python=3.10", "samtools=1.22"},
-            "fastp_env.yml": {"fastp=0.24.0"},
-            "minimap2_env.yml": {"minimap2=2.28", "samtools=1.21"},
+            "samtools_env.yml": {"python=3.10", "samtools=1.24"},      # tool update 2026-10-26
+            "fastp_env.yml": {"fastp=1.3.7"},
+            "minimap2_env.yml": {"minimap2=2.31", "samtools=1.24"},
         }
         for name, dependencies in expected.items():
             lines = (ROOT / "conda_envs" / name).read_text().splitlines()
