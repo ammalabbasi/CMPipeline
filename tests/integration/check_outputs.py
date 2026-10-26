@@ -222,9 +222,12 @@ def run_a(fx, run, expected):
           f"{stub}")
     check("A: RUN_REPORT TOOL VERSIONS (as run) section", "TOOL VERSIONS (as run)" in text)
     mismatch = text.split("TOOL VERSION MISMATCH", 1)[1].split("\n\n", 1)[0] if "TOOL VERSION MISMATCH" in text else ""
-    check("A: RUN_REPORT TOOL VERSION MISMATCH names only the krakenuniq stub",
-          "krakenuniq" in mismatch and mismatch.count("OUTSIDE_ENV") == 1 and "MISSING" not in mismatch,
-          mismatch.strip()[:300])
+    # Status lines only: the section's header sentence itself names MISSING / INSTALLED_MISMATCH.
+    entries = [line.split()[0] + " " + line.split()[1] for line in mismatch.splitlines()
+               if re.match(r"^  [A-Z_]+ ", line) and len(line.split()) > 1]
+    check("A: RUN_REPORT TOOL VERSION MISMATCH names only the krakenuniq stub, as not blocking",
+          entries == ["OUTSIDE_ENV krakenuniq"] and "listed, not blocking" in mismatch,
+          f"{entries}")
 
 
 def run_b(fx, run, expected, batch_correction):
