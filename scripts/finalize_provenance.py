@@ -816,6 +816,10 @@ def sample_outcomes(params: dict) -> dict | None:
         "samples": len(rows),
         "by_state": by_state,
         "failed": sum(n for state, n in by_state.items() if state.startswith("failed_at_")),
+        # QC floor (review #34): not microbial negatives; excluded from the cohort tables unless
+        # --qc_floor_action flag.
+        "not_assessable": sum(n for state, n in by_state.items() if state.startswith("not_assessable_")),
+        "qc_floor_action": params.get("qc_floor_action") or "exclude",
         "metaphlan_status": tally("metaphlan_status") if "metaphlan_status" in rows[0] else {},
         "humann_status": tally("humann_status") if "humann_status" in rows[0] else {},
     }
@@ -827,6 +831,13 @@ def render_sample_outcomes(outcomes: dict | None) -> list[str]:
     out = ["SAMPLE OUTCOMES (QC_SUMMARY/cmp.qc.summary.tsv, terminal_state)"]
     for state, n in outcomes["by_state"].items():
         out.append(f"  {n:>6}  {state}")
+    if outcomes.get("not_assessable"):
+        action = outcomes.get("qc_floor_action", "exclude")
+        out.append(f"  *** {outcomes['not_assessable']} sample(s) NOT ASSESSABLE (QC floor): no unmapped reads to")
+        out.append("      profile, unmapped reads filtered upstream, or too few reads after host depletion.")
+        out.append("      They are NOT microbial negatives. " + (
+            "--qc_floor_action exclude: they are in no cohort table." if action == "exclude" else
+            "--qc_floor_action flag: they WERE profiled and are in the cohort tables; drop them before analysis."))
     if outcomes["failed"]:
         out.append(f"  *** {outcomes['failed']} sample(s) failed at a per-sample stage: they are missing")
         out.append("      from the cohort tables because a task failed, not because they hold no microbes.")

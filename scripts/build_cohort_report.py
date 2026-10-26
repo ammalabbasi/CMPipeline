@@ -96,6 +96,10 @@ def stat_tiles(rows):
         tiles.append(("Median retention of library",
                       "—" if lib_retained is None else f"{lib_retained:.3f}%",
                       "BAM/CRAM samples: host-depleted reads / primary records"))
+    not_assessable = sum(1 for r in rows if str(r.get("terminal_state") or "").startswith("not_assessable_"))
+    if not_assessable:
+        tiles.append(("Not assessable (QC floor)", f"{not_assessable} of {total}",
+                      "no unmapped reads, filtered upstream, or below the depletion floor: not negatives"))
     tiles += [
         ("Cleared the consensus gate",
          "—" if not known else f"{cleared} of {known}",

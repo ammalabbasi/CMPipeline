@@ -175,5 +175,20 @@ class SbatchHygiene(unittest.TestCase):
         self.assertEqual(bad, [], "#SBATCH after the first executable line is ignored")
 
 
+class NextflowParserLimits(unittest.TestCase):
+    """Nextflow 24.10's (v1) parser keeps the entry workflow's source as one Java string, which may
+    not exceed 65,535 characters ("String too long", review #38). The QC-floor port crossed it once
+    (66,739); its channel helpers moved to lib/QcFloor.groovy. Keep logic and long comments out of
+    the workflow block: put helpers in lib/ and explanations in docs or the params block above it."""
+
+    LIMIT = 65535
+
+    def test_entry_workflow_block_fits_the_v1_parser(self):
+        text = (Path(__file__).resolve().parents[1] / "main.nf").read_text()
+        block = text[text.index("\nworkflow {"):]
+        self.assertLess(len(block), self.LIMIT,
+                        f"main.nf workflow block is {len(block)} characters; Nextflow 24.10 refuses > {self.LIMIT}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -236,7 +236,8 @@ class ExtractionOnSyntheticAlignments(unittest.TestCase):
         self.assertEqual(out["reads"], expected_reads(("flag4", "low")))
         self.assertEqual(out["counts"], {
             "sample": "S", "library_primary_records": str(PRIMARY),
-            "extracted_unmapped_records": "5", "low_as_reads_extracted": "3", "low_as_no_as_records": "1"})
+            "extracted_unmapped_records": "5", "low_as_reads_extracted": "3", "low_as_no_as_records": "1",
+            "input_qc_floor": "pass"})
         self.assertEqual(out["aligner"]["low_as_mode"], "on")
         self.assertEqual(out["aligner"]["low_as_mode_reason"], "auto_bwa_mem_T_below_30")
         self.assertIn("1 mapped primary records had no AS tag and were not added", out["stderr"])

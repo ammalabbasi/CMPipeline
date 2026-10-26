@@ -83,11 +83,20 @@ COLUMNS = [
     # MetaPhlAn ran) but the stage left no output: a failed task under --sample_failure_strategy
     # ignore, never "no microbes". NA when classification itself did not finish for the sample.
     "metaphlan_status", "humann_status",
+    # QC floor (pksProfiler COHORT_CHECKS A3; port review #34): pass, or why the sample cannot be
+    # assessed -- unmapped_filtered_upstream (input_unmapped_filter is not none), no_unmapped_records
+    # (zero FLAG 4 records in the BAM/CRAM), below_min_reads_after_depletion (fewer host-depleted
+    # reads than --min_reads_after_depletion, when > 0). NA when not evaluated. A not-assessable
+    # sample is never a microbial negative: terminal_state not_assessable_<reason>.
+    "qc_floor",
     # How the sample ENDED, exactly one of (audit X05/X06; pksProfiler e126439):
     #   completed_profiled | completed_no_call | completed   every per-sample stage it needed finished
     #   failed_at_<stage>        the first stage it needed that left no output (a failed task)
     #   excluded_<reason>        dropped by the pipeline on purpose: zero_reads_after_fastp, or
     #                            decontam_<reason> (decontamination's sample_validation.tsv)
+    #   not_assessable_<reason>  the QC floor (qc_floor): the input cannot say whether microbes are
+    #                            present -- never a negative. Takes precedence over every state but
+    #                            failed_at_extraction / earlier stage failures it depends on
     # Stages, in order: extraction (BAM/CRAM only), read_qc, host_depletion, classification,
     # metaphlan (cleared samples only), humann (when requested, after MetaPhlAn ran),
     # low_as_survival (rescue-on samples only). See terminal_state().
@@ -147,12 +156,57 @@ def gated_status(stage: str, row: dict, stages: list[str], humann_done: set) -> 
     return "ran" if stage_done(stage, row, humann_done) else "failed"
 
 
+QC_FLOOR_INPUT = ("unmapped_filtered_upstream", "no_unmapped_records")
+QC_FLOOR_DEPTH = "below_min_reads_after_depletion"
+
+
+def _int(value):
+    try:
+        return None if value in (None, "", NA) else int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def qc_floor(row: dict, input_type: str | None, min_after_depletion: int = 0) -> str:
+    """The QC floor (see COLUMNS): pass | unmapped_filtered_upstream | no_unmapped_records |
+    below_min_reads_after_depletion | NA (nothing to judge it on)."""
+    alignment = input_type in ALIGNMENT_INPUTS or (input_type is None and _known(row.get("library_primary_records")))
+    judged = False
+    if alignment:
+        upstream = row.get("input_unmapped_filter")
+        if _known(upstream):
+            judged = True
+            if upstream != "none":
+                return "unmapped_filtered_upstream"
+        unmapped = _int(row.get("extracted_unmapped_records"))
+        if unmapped is not None:
+            judged = True
+            if unmapped == 0:
+                return "no_unmapped_records"
+    # A sample fastp emptied is excluded_zero_reads_after_fastp (unchanged); the depth floor is for
+    # samples that reached host depletion with reads.
+    if min_after_depletion > 0 and str(row.get("reads_after_fastp")) not in ("0", "0.0"):
+        depleted = _int(row.get("reads_host_depleted"))
+        if depleted is not None:
+            judged = True
+            if depleted < min_after_depletion:
+                return QC_FLOOR_DEPTH
+    return "pass" if judged else NA
+
+
 def terminal_state(row: dict, stages: list[str], input_type: str | None, humann_done: set,
                    per_sample: bool) -> str:
     """Exactly one terminal state per sample (see COLUMNS)."""
     if per_sample:
+        floor = row.get("qc_floor")
+        # An input-level floor is known as soon as extraction finished; everything after it was
+        # skipped on purpose (--qc_floor_action exclude), so it is not a failure.
+        if floor in QC_FLOOR_INPUT:
+            return f"not_assessable_{floor}"
         if str(row.get("reads_after_fastp")) == "0":
             return "excluded_zero_reads_after_fastp"
+        if floor == QC_FLOOR_DEPTH:
+            return f"not_assessable_{floor}"
         for stage in stages:
             if stage_needed(stage, row, input_type) and not stage_done(stage, row, humann_done):
                 return f"failed_at_{stage}"
@@ -247,6 +301,8 @@ def parse_extract_counts(path: Path) -> dict:
         # Absent from extract_counts.tsv written before the low-score rescue existed: NA.
         "low_as_reads_extracted": record.get("low_as_reads_extracted") or NA,
         "low_as_no_as_records": record.get("low_as_no_as_records") or NA,
+        # What extractReads decided (QC floor); cross-checked against the recomputed qc_floor.
+        "_input_qc_floor": record.get("input_qc_floor") or None,
     }
 
 
@@ -421,6 +477,8 @@ def parse_batch_sample_status(path: Path) -> dict[str, str]:
 def sample_status(row: dict) -> str:
     def is_zero(key):
         return str(row.get(key)) in ("0", "0.0")
+    if row.get("qc_floor") not in (None, NA, "pass"):
+        return "not_assessable"
     if is_zero("reads_after_fastp"):
         return "dropped_zero_after_fastp"
     if is_zero("reads_host_depleted"):
@@ -456,7 +514,8 @@ def sample_of(path: Path, suffix: str) -> str:
     return path.name[: -len(suffix)] if path.name.endswith(suffix) else path.stem
 
 
-def build(inputs: Path, min_reads: int, stages: list[str] | None = None) -> list[dict]:
+def build(inputs: Path, min_reads: int, stages: list[str] | None = None,
+          min_after_depletion: int = 0) -> list[dict]:
     rows: dict[str, dict] = {}
 
     def row_for(sample: str) -> dict:
@@ -586,6 +645,14 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None) -> list
             for column in ("reads_after_hg38", "reads_after_t2t_phix", "reads_host_depleted"):
                 if row.get(column) in (None, NA):
                     row[column] = 0
+        row["qc_floor"] = qc_floor(row, input_types.get(row["sample"]), min_after_depletion)
+        recorded = row.pop("_input_qc_floor", None)
+        if recorded is not None and recorded != "pass" and row["qc_floor"] != recorded:
+            raise ValueError(f"{row['sample']}: extractReads recorded input_qc_floor {recorded}, "
+                             f"but the QC summary computes {row['qc_floor']}")
+        if recorded == "pass" and row["qc_floor"] in QC_FLOOR_INPUT:
+            raise ValueError(f"{row['sample']}: extractReads recorded input_qc_floor pass, "
+                             f"but the QC summary computes {row['qc_floor']}")
         if row.get("sample_status") != "no_outputs":
             row["sample_status"] = sample_status(row)
         depletion_input = row.pop("_depletion_input", None)
@@ -630,6 +697,8 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--min-reads", type=int, default=100000,
                         help="--consensus_min_reads, for cleared_consensus_gate")
+    parser.add_argument("--min-reads-after-depletion", type=int, default=0,
+                        help="--min_reads_after_depletion, for qc_floor (0 = off)")
     parser.add_argument("--stages", default=None,
                         help="comma-separated per-sample stages this run requested, from: "
                              + ", ".join(STAGE_ORDER) + ". main.nf passes them; without it they "
@@ -638,7 +707,7 @@ def main() -> int:
     args = parser.parse_args()
 
     stages = parse_stages(args.stages) if args.stages is not None else None
-    rows = build(args.inputs, args.min_reads, stages)
+    rows = build(args.inputs, args.min_reads, stages, args.min_reads_after_depletion)
     with args.output.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=COLUMNS, delimiter="\t",
                                 extrasaction="ignore")
@@ -651,6 +720,11 @@ def main() -> int:
         states[row["terminal_state"]] = states.get(row["terminal_state"], 0) + 1
     for state, n in sorted(states.items()):
         print(f"  {state}: {n}")
+    not_assessable = sum(n for s, n in states.items() if s.startswith("not_assessable_"))
+    if not_assessable:
+        print(f"WARNING: {not_assessable} sample(s) are NOT ASSESSABLE (terminal_state not_assessable_*): "
+              "no unmapped reads to profile, unmapped reads filtered upstream, or too few reads after host "
+              "depletion. They are not microbial negatives")
     failed = sum(n for s, n in states.items() if s.startswith("failed_at_"))
     if failed:
         print(f"WARNING: {failed} sample(s) failed at a per-sample stage (terminal_state failed_at_*); "

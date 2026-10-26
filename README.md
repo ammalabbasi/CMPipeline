@@ -178,7 +178,7 @@ Under `--outdir`; each folder can be moved with its own parameter.
 | `04_DECONTAMINATION/` | the decontaminated table, contaminant calls, per-sample roles |
 | `05_BATCH_CORRECTION/` | corrected tables, PERMANOVA summary, correction status |
 | `HUMANN3/` | gene families and pathways |
-| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 63 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY/` | `cmp.qc.summary.tsv` (one row per sample, 64 columns) and `cmp_cohort_report.html` |
 
 Run records (`trace.txt`, `report.html`, `RUN_REPORT.txt`, `provenance/`) go to `pipeline_info/` in the
 launch directory. Details: [Outputs](docs/outputs.md).

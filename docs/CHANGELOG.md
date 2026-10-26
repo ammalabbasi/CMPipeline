@@ -104,6 +104,29 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**QC floor: a sample that cannot be assessed is `not_assessable`, never a microbial negative**
+(pksProfiler COHORT_CHECKS A3, a proposal there; port review #34). A BAM/CRAM pre-filtered to mapped
+reads gives an empty profile that decontam and ConQuR would read as "no microbes" and that would sit in
+the low-biomass tail.
+- `extractReads` records `input_qc_floor` in `<sample>.extract_counts.tsv`: `unmapped_filtered_upstream`
+  when the input's `@PG` chain shows its unmapped reads were removed upstream (`input_unmapped_filter`:
+  `samtools view -F 4`, `-f 2`, `-q` > 0, a region; a sambamba filter), `no_unmapped_records` when the
+  BAM/CRAM has no FLAG 4 record (the low-score rescue does not lift this), else `pass`.
+- `--min_reads_after_depletion` (new, default `0` = off): fewer host-depleted reads than this is
+  `below_min_reads_after_depletion`. No calibrated value exists yet, so it is off.
+- `--qc_floor_action exclude|flag` (new, default `exclude`): `exclude` stops a not-assessable sample at
+  extraction (or before classification, for the depth floor), so it is in no cohort table; `flag` profiles
+  it and only marks it.
+- QC summary: `terminal_state` `not_assessable_<reason>`, `sample_status` `not_assessable`, new column
+  `qc_floor` (64 columns). `RUN_REPORT.txt` *SAMPLE OUTCOMES* states the count and that they are not
+  negatives; the cohort report adds a *Not assessable* tile.
+- **Changes which samples are reported, not any count**: a BAM/CRAM with zero unmapped records, or with
+  an upstream unmapped filter in its `@PG`, no longer reaches the cohort tables by default (zero-record
+  inputs were already dropped at fastp; filtered inputs with rescued low-AS reads were profiled before).
+- The channel helpers live in `lib/QcFloor.groovy`: with them inline, `main.nf`'s entry workflow
+  exceeded the 65,535-character string Nextflow 24.10's parser allows. `tests/test_repo_hygiene.py` now
+  checks that limit (review #38); the block is at ~64,700 characters, so new workflow logic belongs in `lib/`.
+
 **Input provenance for BAM/CRAM: reference fingerprint and aligner chain** (audit X13, Ludmil E3;
 pksProfiler `70cb629`). Nothing recorded which human build each BAM/CRAM was aligned to, or how, so a
 results tree mixing TCGA (GDC GRCh38.d1.vd1: hs38d1 decoys, chrEBV, ~200 viral contigs), Mutographs and
