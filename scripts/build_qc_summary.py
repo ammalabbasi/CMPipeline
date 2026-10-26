@@ -303,9 +303,10 @@ def parse_fastp(path: Path) -> dict:
         "duplication_rate": data.get("duplication", {}).get("rate"),
         "reads_low_quality": filtered.get("low_quality_reads"),
         "reads_too_short": filtered.get("too_short_reads"),
-        # Which adapter FASTA fastp was given, read from its own command line. fastp >= 1.x
-        # writes `adapter_cutting` also when it only auto-detected adapters, so that block
-        # cannot tell whether a FASTA was scanned. adapter_trimmed_reads counts both.
+        # Which adapter FASTA fastp was given, read from its own command line. fastp writes
+        # `adapter_cutting` whenever it trimmed adapters, including by auto-detection alone
+        # (seen with 0.24 and 1.3.7), so that block cannot tell whether a FASTA was scanned.
+        # adapter_trimmed_reads counts both.
         "adapter_scan_applied": NA if adapter_list == NA else ("false" if adapter_list == "none" else "true"),
         "adapter_list": adapter_list,
         "adapter_trimmed_reads": (adapter or {}).get("adapter_trimmed_reads", NA),

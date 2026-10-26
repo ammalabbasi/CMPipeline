@@ -17,7 +17,8 @@ Not yet released; these are the changes since the last tagged state of `main`.
   `pct_bracken_human`, `pct_bracken_synthetic`. **`bracken_microbial_reads` now excludes human and
   synthetic construct**; before, it was the root count. `low_as_share_of_bracken` now divides by
   `kraken_classified_reads` (same value as before). New `adapter_list`; `adapter_scan_applied` is read from
-  fastp's command line, because fastp 1.x writes `adapter_cutting` also for auto-detection alone.
+  fastp's command line, because fastp writes `adapter_cutting` whenever it trims, auto-detection included (0.24 too). The old
+  column was therefore wrong for BAM/CRAM input: `true` meant "auto-detection trimmed something".
 
 - **Tool update (2026-10-26):** minimap2 2.28 → 2.31, samtools → 1.24, fastp 0.24.0 → 1.3.7, Bracken 2.9 →
   3.1p1, bowtie2 (MetaPhlAn env) → 2.5.5; the Kraken/Bracken env is reduced to the tools the task runs.

@@ -28,7 +28,7 @@ list: on one aligned CRAM `filterReads` took 2 h 50 m with it versus 3 m 15 s wi
 and 30,470 reads trimmed; core list 17 s, 61,426; full list 645 s, 66,112.
 
 The QC summary's `adapter_list` column records which FASTA each sample used (read from fastp's own
-command line; fastp 1.x writes an `adapter_cutting` block even for auto-detection alone).
+command line; fastp writes an `adapter_cutting` block whenever auto-detection alone trims anything).
 
 ## Low-score mapped reads (TCGA GDC BAMs)
 

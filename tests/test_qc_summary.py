@@ -106,7 +106,7 @@ class FastpTests(unittest.TestCase):
             self.assertEqual(rows["WITHOUT"]["adapter_trimmed_reads"], "NA")
 
     def test_autodetect_block_is_not_a_fasta_scan(self):
-        """fastp 1.x writes adapter_cutting when it only auto-detected: still no FASTA scan."""
+        """fastp writes adapter_cutting when auto-detection alone trimmed: still no FASTA scan."""
         with tempfile.TemporaryDirectory() as tmp:
             write_fastp(Path(tmp), "AUTO", adapter=True)
             row = build_rows(tmp)["AUTO"]
