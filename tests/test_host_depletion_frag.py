@@ -25,6 +25,14 @@ class HostDepletionFrag(unittest.TestCase):
             self.assertIn("${frag}", c)
         self.assertIn("def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''", mod)
 
+    def test_every_sr_alignment_in_the_pipeline_carries_frag(self):
+        """2026-10-26: alignForValidation streamed interleaved mates into minimap2 -ax sr without
+        --frag=no, the same route dependence as E0 (and pksProfiler's V8a bug, f134fb8)."""
+        for nf in sorted((ROOT / "Modules").glob("*.nf")):
+            code = "\n".join(l for l in nf.read_text().splitlines() if not l.lstrip().startswith(("*", "//", "/*", "#")))
+            for c in re.findall(r"minimap2 [^|\n]*-ax sr[^|\n]*", code):
+                self.assertIn("${frag}", c, f"{nf.name}: {c}")
+
     def test_documented(self):
         self.assertIn("`--host_depletion_frag`", (ROOT / "docs" / "parameters.md").read_text())
 

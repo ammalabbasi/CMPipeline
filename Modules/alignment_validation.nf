@@ -141,11 +141,14 @@ process alignForValidation {
     }.join('\n        ')
     def groups_arg = groups ? "--groups \"${groups}\"" : ""
     def export_arg = params.validation_export_reads.toString() == 'true' ? "--export_reads" : ""
+    // Same rule as host depletion (E0): with -ax sr, minimap2 pairs adjacent mate-named reads, so the
+    // result would depend on whether mates arrive interleaved (BAM route) or not (FASTQ route).
+    def frag = params.host_depletion_frag.toString() == 'no' ? '--frag=no' : ''
     """
     set -euo pipefail
     {
         ${stream}
-    } | minimap2 -ax sr -t ${task.cpus} -p 0.99 -N 100 --secondary=yes "${index}" /dev/stdin 2> minimap2.log \\
+    } | minimap2 -ax sr ${frag} -t ${task.cpus} -p 0.99 -N 100 --secondary=yes "${index}" /dev/stdin 2> minimap2.log \\
       | python "${params.scripts}/validation_score.py" \\
             --samples "${sample_ids.join(',')}" \\
             --contigs "${contig_labels}" \\
