@@ -67,7 +67,12 @@ process Bracken {
     # ~150 bp TCGA WGS reads. auto: median length of the first 1,000,000 reads, then the database
     # length closest to it (ties -> shorter). The choice is written out for QC and provenance.
     MEDIAN_LEN=\$(awk 'NR%4==2{print length(\$0)} NR>=4000000{exit}' "${SAMPLE_NAME}.trimmed.fastq" | sort -n | awk '{a[NR]=\$1} END{print (NR ? a[int((NR+1)/2)] : 0)}')
-    AVAILABLE=\$(ls "${params.kraken_db}" | sed -n 's/^database\([0-9][0-9]*\)mers\.kmer_distrib\$/\1/p' | sort -n | tr '\n' ' ')
+    # The sed group, dot and back-reference below carry DOUBLED backslashes: a single backslash before
+    # a parenthesis, dot or digit is not a Groovy string escape. Nextflow's v1 parser refused to compile
+    # it; the v2 parser (26.04) compiled it but put every later interpolation of this script onto the
+    # wrong value, so kreport2mpa.py was called from the sample name and every Bracken task failed.
+    # tests/test_bracken_read_length.py scans every module script for this.
+    AVAILABLE=\$(ls "${params.kraken_db}" | sed -n 's/^database\\([0-9][0-9]*\\)mers\\.kmer_distrib\$/\\1/p' | sort -n | tr '\n' ' ')
     if [[ "${params.bracken_read_length}" == "auto" ]]; then
         BRACKEN_LEN=\$(for L in \$AVAILABLE; do d=\$(( L > MEDIAN_LEN ? L - MEDIAN_LEN : MEDIAN_LEN - L )); echo "\$d \$L"; done | sort -n -k1,1 -k2,2 | head -1 | cut -d' ' -f2)
         LEN_MODE=auto

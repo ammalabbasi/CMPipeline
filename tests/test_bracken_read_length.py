@@ -68,5 +68,39 @@ class BrackenReadLength(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
 
 
+class GroovyStringEscapes(unittest.TestCase):
+    """Every backslash in a module's triple-quoted script must be a Groovy string escape.
+
+    Bracken.nf's kmer_distrib sed was written with single backslashes before ( ) . and 1. Nextflow's
+    v1 parser refused to compile main.nf; the v2 parser (26.04) compiled it and shifted every later
+    interpolation of the Bracken script onto the wrong value, so every Bracken task failed. Neither
+    -preview nor the emulation above (which un-escapes as Groovy would) could see it.
+    """
+    ALLOWED = set('\\$ntr"\'\nbfu0/')
+
+    def offending(self, text):
+        found = []
+        for match in re.finditer(r'"""(.*?)"""', text, re.S):
+            body, i = match.group(1), 0
+            while i < len(body):
+                if body[i] == "\\":
+                    nxt = body[i + 1] if i + 1 < len(body) else ""
+                    if nxt not in self.ALLOWED:
+                        found.append((text[:match.start(1) + i].count("\n") + 1, body[max(0, i - 25):i + 15]))
+                    i += 2
+                else:
+                    i += 1
+        return found
+
+    def test_module_scripts_use_valid_escapes(self):
+        for path in sorted((ROOT / "Modules").glob("*.nf")) + [ROOT / "main.nf"]:
+            with self.subTest(path=path.name):
+                self.assertEqual(self.offending(path.read_text()), [])
+
+    def test_the_scan_catches_the_old_line(self):
+        old = 'x = """\n    sed -n \'s/^database\\([0-9]*\\)mers\\.k\\$/\\1/p\'\n"""'
+        self.assertEqual(len(self.offending(old)), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
