@@ -29,6 +29,7 @@ concurrent runs do not overwrite each other's measurements:
 | `RUN_REPORT.txt` | the run in reading order, appended per session — status, reproducibility, per-process cost, the conda envs specified, and *TOOL VERSIONS (as run)*: what each task actually executed |
 | `provenance/<sessionId>_<runName>.json` | the complete machine-readable record, one per launch (a `-resume` adds a new file). It carries SHA-256 digests of the cohort tables (`outputs.cohort_tables`), the conda envs this run used, ConQuR/cqrReg versions, and a digest of `conda_envs/` |
 | `trace.txt`, `report.html`, `timeline.html`, `dag.html` | Nextflow's own execution records, on by default ; `trace.txt` adds `attempt`, `cpus`, `memory` and `workdir` to Nextflow's default columns |
+| `RUN_REPORT.txt` *DATABASE VERSIONS*, JSON `databases` | per database the run used: release label (from `conf/databases.tsv`), fingerprint and verdict against the frozen manifest; see below |
 | `<work dir>/.tool_versions.tsv` | per task: each tool the task ran, its package, status, version, lockfile pin, resolved path and the active `$CONDA_PREFIX` (`scripts/record_tool_versions.sh`) |
 
 **What ran, not just what was pinned.** The *CONDA ENVS THIS RUN USED* section lists what each
@@ -41,6 +42,25 @@ task left no record) and `INSTALLED_MISMATCH` (the binary disagrees with its env
 `--tool_version_check strict` (default) a task stops the run at the first of the first four, and the
 finaliser exits non-zero on any of them; the JSON record carries the same under
 `environment.tool_versions`. Tool names, versions and paths only, never a sample ID.
+
+**Which database releases a run read** (audit X14). `conf/databases.tsv` freezes every database and
+index the pipeline uses — `hg38_db`, `t2t_phix_db`, `pangenome_db`, `kraken_db`, `bracken_kmer_distrib`
+(the `database<N>mers.kmer_distrib` files inside `--kraken_db`), `metaphlan_db`, `humann3_nucleotide_db`,
+`humann3_protein_db` — with its release label, path, size, file count, newest mtime and two cheap
+fingerprints: `sha256:listing` (sha256 over every file's relative path and size; the method and, for the
+shared files, the values are pksProfiler's) and a key check of small release-defining files
+(`sha256:files`, e.g. KrakenUniq `taxDB`/`ktaxonomy.tsv`, the MetaPhlAn `.pkl`, every `kmer_distrib`) or
+of a minimap2 index's header + sequence dictionary (`mmi:dictionary`). At the end of every run
+`scripts/database_versions.py` recomputes both for the databases the requested stages used (plus
+`cram_reference`, `validation_ref` and `validation_taxdb` when set) and writes *DATABASE VERSIONS* to
+`RUN_REPORT.txt` and `databases` to the JSON record. Verdicts: `frozen`, `frozen (path differs)`,
+`CHANGED: listing` (a file added, removed or resized), `CHANGED: key` (a key file's content or an index's
+contig dictionary differs), `not_in_manifest`, `absent`, `unused` (stage not requested), with a note when
+only mtimes moved (a copy or restore). It is a record, not a gate. Nothing large is hashed per run
+(`database.kdb` is 574 GB); the integrity check for the big files is `sha256sum`, run deliberately. To
+re-freeze after a deliberate change: `python3 scripts/database_versions.py freeze kraken_db=<path> ...`
+and edit `release`/`source` by hand. The older `REFERENCES AND DATABASES` digests (name/size/mtime, 12 hex)
+are the `-resume` cache keys and stay.
 
 `RUN_REPORT.txt` states the commit and **whether the working tree was dirty**. A run
 launched with uncommitted edits says so, in those words — "this run is NOT attributable to

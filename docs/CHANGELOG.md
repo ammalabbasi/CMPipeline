@@ -121,6 +121,21 @@ Hartwig inputs could not say that their unmapped reads were defined against diff
 - Never recorded: the `@PG` CL itself, `@RG` text, read-group/sample barcodes, paths. No result changes;
   `extractReads` re-runs on `-resume` (its script and helper digests changed).
 
+**Database manifest: every run records which database releases it read** (audit X14; pksProfiler
+`c08098d`). A path is not a version: the KrakenUniq, MetaPhlAn, HUMAnN and host-index directories could
+be rebuilt in place and every run would print the same line.
+- `conf/databases.tsv` freezes `hg38_db`, `t2t_phix_db`, `pangenome_db`, `kraken_db`,
+  `bracken_kmer_distrib`, `metaphlan_db` and both HUMAnN databases: release label, path, size, file
+  count, newest mtime, a `sha256:listing` fingerprint (relative path + size of every file; identical to
+  pksProfiler's method and values for the shared KrakenUniq and host-index files) and a key check
+  (`sha256:files` of small release-defining files, or `mmi:dictionary` for minimap2 indexes).
+- `scripts/database_versions.py` recomputes them at the end of each run for the databases the requested
+  stages used; `RUN_REPORT.txt` gains *DATABASE VERSIONS* (release, fingerprint, `frozen` /
+  `CHANGED: listing` / `CHANGED: key` / `not_in_manifest` / `unused`) and the JSON record `databases`.
+  Reads metadata, a few small key files (largest: the 98 MB MetaPhlAn `.pkl`, 125 MB KrakenUniq
+  `taxDB`) and the first kB of each `.mmi`; a few seconds per run. A record, not a gate. No result changes.
+- The `t2t_phix_db` row states that the index contains no phiX (see the phiX entry below).
+
 **Per-sample failure policy: every sample ends in one reported state** (audit X05/X06; pksProfiler
 `dc5d703`, `e126439`).
 - Alignment validation batches only samples that are columns of the species table. Under

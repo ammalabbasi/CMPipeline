@@ -742,6 +742,51 @@ def render_input_alignments(summary: dict | None) -> list[str]:
     return out
 
 
+# ------------------------------------------------------------ database versions (X14)
+
+
+def _sibling(name: str):
+    """A helper module from scripts/, loaded by path (this file is also loaded by path in tests)."""
+    import importlib.util
+    path = Path(__file__).resolve().parent / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"cmp_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+DATABASE_PARAMS = ("hg38_db", "t2t_phix_db", "pangenome_db", "cram_reference", "kraken_db", "metaphlan_db",
+                   "humann3_nucleotide_db", "humann3_protein_db", "validation_ref", "validation_taxdb")
+
+
+def database_versions(params: dict, stages: list[str] | None, manifest: Path | None = None) -> dict:
+    """conf/databases.tsv compared with the databases this run used (scripts/database_versions.py).
+    Never raises: a provenance failure must not mask the run's own outcome."""
+    try:
+        dv = _sibling("database_versions")
+        paths = {name: params.get(name) for name in DATABASE_PARAMS}
+        paths = {k: (None if v in (None, "", "null", "None") else v) for k, v in paths.items()}
+        # The taxonomy DB alignment validation reads when no prebuilt reference is given (main.nf).
+        if not paths.get("validation_ref") and not paths.get("validation_taxdb") and paths.get("kraken_db"):
+            paths["validation_taxdb"] = f"{paths['kraken_db']}/taxDB"
+        summary = dv.record(paths, stages, manifest or dv.MANIFEST)
+        summary["refseq_snapshot"] = params.get("validation_refseq_snapshot") or None
+        return summary
+    except Exception as exc:   # noqa: BLE001 -- recorded, never fatal
+        return {"error": f"{type(exc).__name__}: {exc}", "rows": []}
+
+
+def render_database_versions(summary: dict | None) -> list[str]:
+    if not summary:
+        return []
+    if summary.get("error"):
+        return ["DATABASE VERSIONS", f"  could not be recorded: {summary['error']}", ""]
+    lines = _sibling("database_versions").render(summary)
+    if summary.get("refseq_snapshot") and lines:
+        lines.insert(-1, f"  {'validation RefSeq':<22}snapshot {summary['refseq_snapshot']} (--validation_refseq_snapshot)")
+    return lines
+
+
 # ------------------------------------------------------- sample outcomes (X05/X06)
 
 
@@ -868,6 +913,10 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
         add(f"  {name:<22}{digest}")
     add("")
 
+    # Which release each database was, and whether it is still the frozen one (X14).
+    for line in render_database_versions(record.get("databases")):
+        add(line)
+
     envs = (record.get("environment") or {}).get("conda_envs_used") or {}
     if envs:
         add("CONDA ENVS THIS RUN USED")
@@ -988,6 +1037,10 @@ def main() -> int:
         # How each sample ended (terminal_state), counts only (audit X05/X06).
         "sample_outcomes": sample_outcomes(launch_params),
     }
+
+    # Database releases and fingerprints, compared with conf/databases.tsv (X14).
+    record["databases"] = database_versions(
+        launch_params, (record.get("invocation") or {}).get("stages_requested"))
 
     environment = record.setdefault("environment", {})
     envs = conda_envs(environment.get("conda_envs") or {}, launch_params.get("conqur_sha"))
