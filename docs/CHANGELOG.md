@@ -90,6 +90,23 @@ truthy in Groovy, so every boolean passed as `false` would silently have been **
 including `--run_decontam false`. Each flag is now resolved once through a single coercion
 and rejected outright if it is not a boolean.
 
+**Per-sample failure policy: every sample ends in one reported state** (audit X05/X06; pksProfiler
+`dc5d703`, `e126439`).
+- Alignment validation batches only samples that are columns of the species table. Under
+  `--sample_failure_strategy ignore`, a sample whose Bracken task failed was batched anyway, the scorer
+  exited 1 on it, and the strict validation step ended the run; such a sample is now logged and skipped.
+- The QC summary gains `metaphlan_status`, `humann_status` and `terminal_state` (51 columns):
+  `completed_profiled` / `completed_no_call` / `completed`, `failed_at_<stage>` or `excluded_<reason>`.
+  MetaPhlAn and HUMAnN failures, silent before, are named per sample. `main.nf` passes the requested
+  stages (`--stages`), each sample's input type, and which HUMAnN profiles finished.
+- `RUN_REPORT.txt` gains a counts-only *SAMPLE OUTCOMES* section (`outputs.sample_outcomes` in the JSON).
+- `tests/test_sample_failure_policy.py` discovers every per-sample process from the source (first input
+  `tuple val(sampleID)`) and fails if one lacks label `per_sample`, or a cohort step carries it.
+- **The default stays `finish`** (conservative; the audit asked for X05 to be fixed before deciding).
+  `ignore` is now safe and recommended for cohort-scale runs. No result changes: per-sample outputs and
+  cohort tables are unchanged for runs where every sample succeeds; validation batch composition is
+  unchanged unless a sample is missing from the species table.
+
 **Tool environment guard and runtime tool versions** (audit K06/K07/X04; ported from pksProfiler
 F16, `26e196d`, `2bc7ca9`, `2c0f8c8`). CRC50 attempt 1 (Job 12380606) ran `~/.bashrc`'s
 `tools/minimap2` 2.24 in all 50 `mapReads` tasks against a pinned 2.28, and nothing in the run record

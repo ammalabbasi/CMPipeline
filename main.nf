@@ -794,6 +794,9 @@ workflow {
             // Every sample the sheet asked for, so the QC summary can name one that produced
             // nothing -- e.g. dropped by --sample_failure_strategy ignore (audit C10).
             qcParts << sample_sheet.map { it[0] }.collectFile(name: 'expected_samples.txt', newLine: true, sort: true)
+            // Each sample's input type, so the QC summary expects extraction of BAM/CRAM inputs only
+            // when it decides where a failed sample stopped (terminal_state, audit X05).
+            qcParts << sample_sheet.map { "${it[0]}\t${it[1]}" }.collectFile(name: 'sample_input_types.tsv', newLine: true, sort: true)
 
             sample_sheet.branch {
                 alignment: it[1] in ['bam', 'cram']
@@ -916,6 +919,7 @@ workflow {
                 .flatMap()
                 .set { CLASSIFICATION_READS }
             qcParts << CLASSIFICATION_READS.map { it[0] }.collectFile(name: 'expected_samples.txt', newLine: true, sort: true)
+            qcParts << CLASSIFICATION_READS.map { "${it[0]}\thost_depleted" }.collectFile(name: 'sample_input_types.tsv', newLine: true, sort: true)
             log.info "Using host-depleted FASTQ inputs without filtering or host mapping"
         } else {
             log.info "Skipping host depletion step"
@@ -999,6 +1003,13 @@ workflow {
                     pathabundance: pathabundance
                     pathcoverage: pathcoverage
                 }.set { HUMANN3_MULTI }
+
+                // Which samples' HUMAnN profiles finished: the QC summary reports a sample that MetaPhlAn
+                // ran on but HUMAnN did not (a failed task under --sample_failure_strategy ignore) as
+                // humann_status failed / terminal_state failed_at_humann, never silently (audit X05).
+                qcParts << HUMANN3_OUT.map { genefamilies, pathabundance, pathcoverage ->
+                        genefamilies.name.replaceFirst(/_genefamilies\.tsv$/, '') }
+                    .collectFile(name: 'humann3_completed.txt', newLine: true, sort: true)
 
                 merge_humann3(
                     HUMANN3_MULTI.genefamilies.flatten().collect(),
@@ -1092,7 +1103,26 @@ workflow {
             // batches, every alignForValidation cache key changed and -resume re-aligned the whole cohort.
             // Validation waits for the whole cohort anyway (its reference is built from the consensus table).
             def validationBatchSize = params.validation_batch_size.toString().toInteger()
+            // Only samples that are columns of the species table are validated (audit X05). Under
+            // --sample_failure_strategy ignore a sample whose Bracken task failed still has host-depleted
+            // reads; batched in, the scorer stopped on it ("not columns of ...", exit 1) and the strict
+            // cohort step ended the run after hours of validation. Such a sample is named in the log here
+            // and is failed_at_classification in the QC summary.
+            VALIDATION_TABLE.first()
+                .map { table -> table.withReader { it.readLine() }.tokenize('\t').drop(1).collect { it.trim() } as Set }
+                .set { VALIDATION_TABLE_SAMPLES }
             CLASSIFICATION_READS
+                .combine(VALIDATION_TABLE_SAMPLES)
+                .branch { id, reads, columns ->
+                    in_table: id.toString() in columns
+                    absent: true
+                }
+                .set { VALIDATION_CANDIDATES }
+            VALIDATION_CANDIDATES.absent.subscribe { id, reads, columns ->
+                log.warn "Alignment validation: sample ${id} is not in the species table (its classification failed or was ignored); not validated"
+            }
+            VALIDATION_CANDIDATES.in_table
+                .map { id, reads, columns -> tuple(id, reads) }
                 .toSortedList { a, b -> a[0].toString() <=> b[0].toString() }
                 .flatMap { all -> all.collate(validationBatchSize) }
                 .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
@@ -1236,7 +1266,19 @@ workflow {
         // compiles on both.
         def qcChannel = qcParts.first()
         qcParts.drop(1).each { part -> qcChannel = qcChannel.mix(part) }
-        qcSummary(qcChannel.collect(), depsOf(["${params.scripts}/build_qc_summary.py"]))
+        // The per-sample stages this run requested, in order, so the QC summary can name the stage a
+        // failed sample stopped at -- also one that EVERY sample failed (terminal_state, audit X05).
+        def beginning = params.start_from == 'beginning'
+        def qcStages = [
+            (beginning && !skipHostDepletion) ? 'extraction' : null,
+            (beginning && !skipHostDepletion) ? 'read_qc' : null,
+            (beginning && !skipHostDepletion) ? 'host_depletion' : null,
+            (beginning && !skipClassification) ? 'classification' : null,
+            (beginning && !skipClassification) ? 'metaphlan' : null,
+            (beginning && !skipClassification && !skipHumann3) ? 'humann' : null,
+            (beginning && !skipHostDepletion) ? 'low_as_survival' : null,
+        ].findAll { it }.join(',')
+        qcSummary(qcChannel.collect(), qcStages, depsOf(["${params.scripts}/build_qc_summary.py"]))
 
         // The report reads the summary table, not the results tree, so the two cannot
         // disagree about what the run produced.

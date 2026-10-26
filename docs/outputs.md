@@ -14,7 +14,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 | `HUMANN3` | gene families, pathway abundance and coverage, plus `merged/` |
 | `04_DECONTAMINATION`, `05_BATCH_CORRECTION`, `06_VALIDATION` | optional stages; see their sections |
 | `MULTIQC` | `multiqc_report.html` over fastp JSON and all five FastQC passes |
-| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 48 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 51 columns) and `cmp_cohort_report.html` |
 
 Each directory can be moved on its own with the matching parameter: `--unmapped_bam_dir`,
 `--fastqc_dir`, `--mapped_reads_dir`, `--krakenuniq_bracken_dir`, `--metaphlan4_dir`,
@@ -97,6 +97,23 @@ different input types with `pct_retained_of_library`, not `pct_retained_overall`
 `no_reads_after_depletion`, `below_bracken_threshold` (Bracken made no call, and `bracken_status`
 is `no_call`) or `profiled`. A sample in the sheet that produced nothing (a failed task, or one dropped by `--sample_failure_strategy ignore`) still gets a row, with `sample_status` `no_outputs`.
 
+**How each sample ended: `terminal_state`** (audit X05/X06). Exactly one of:
+
+| Value | Meaning |
+|---|---|
+| `completed_profiled` | every per-sample stage it needed finished, and Bracken called taxa |
+| `completed_no_call` | every stage finished; Bracken made a below-threshold no-call |
+| `completed` | every stage finished in a run without classification, or a row from `--start_from decontam` / `batch_correction` |
+| `failed_at_<stage>` | the first stage it needed that left no output: a failed task (kept going by `--sample_failure_strategy ignore`, or the run stopped). Stages in order: `extraction` (BAM/CRAM only), `read_qc`, `host_depletion`, `classification`, `metaphlan` (only if it cleared `--consensus_min_reads`), `humann` (when requested, only after MetaPhlAn ran), `low_as_survival` (rescue-on samples only) |
+| `excluded_<reason>` | dropped on purpose: `excluded_zero_reads_after_fastp`, or `excluded_decontam_<reason>` from decontamination's `sample_validation.tsv` (e.g. `insufficient_library`, `unselected_sample_type`) |
+
+A failure upstream takes precedence over a later exclusion. `metaphlan_status` and `humann_status`
+are `ran`, `below_gate`, `failed` (cleared the gate but left no profile), `metaphlan_failed` (HUMAnN
+only), `not_requested`, or `NA` when classification did not finish. Batch-correction exclusions stay
+per rank in `batch_*_status`. FastQC failures are not in the terminal state (QC-only, nothing
+downstream uses them); they appear under *WHAT FAILED* in `RUN_REPORT.txt`. `RUN_REPORT.txt` also
+gets a counts-only *SAMPLE OUTCOMES* section, and the QC task's log prints the counts per state.
+
 `<sample>.reads_after_filtering.txt` holds the post-fastp read count; it is what the
 workflow uses to decide whether a sample continues, so it is also the first place to look
 when a sample is missing from downstream output.
@@ -111,7 +128,7 @@ Every run produces, unless switched off:
 
 - **`RESULTS/MULTIQC/multiqc_report.html`** — fastp JSON plus all five FastQC passes
   (raw, filtered, post-GRCh38, post-T2T, post-pangenome). Disable with `--skip_multiqc true`.
-- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 48 columns (see *Outputs*).
+- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 51 columns (see *Outputs*).
 - **`RESULTS/QC_SUMMARY/cmp_cohort_report.html`** — a self-contained page (no network, no
   CDN) with the retention chart and the tables. Disable with `--skip_cohort_report true`.
 - **`pipeline_info/RUN_REPORT.txt`** and the provenance record — see *Outputs*.

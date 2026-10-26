@@ -10,6 +10,7 @@ report. Accepts the arguments Modules/Bracken.nf passes. Standard library only.
 """
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -27,6 +28,12 @@ def main():
     ap.add_argument("--unclassified-out", required=True)
     ap.add_argument("reads", nargs="+")
     args = ap.parse_args()
+
+    # Forced-failure hook for the failure-policy run (audit X05): fail like a crashed classifier
+    # for the sample named in CMP_IT_FAIL_CLASSIFY (its reads file is <sample>.trimmed.fastq).
+    fail = os.environ.get("CMP_IT_FAIL_CLASSIFY")
+    if fail and any(Path(r).name.startswith(fail + ".") for r in args.reads):
+        sys.exit(f"stub_krakenuniq: forced failure for {fail} (CMP_IT_FAIL_CLASSIFY)")
 
     tax = {}
     for line in (Path(args.db) / "stub_taxonomy.tsv").read_text().splitlines():

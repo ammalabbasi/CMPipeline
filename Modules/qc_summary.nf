@@ -20,6 +20,8 @@ process qcSummary {
 
     input:
     path(qc_inputs, stageAs: "qc_?/*")
+    // Comma-separated per-sample stages this run requested (main.nf), for terminal_state.
+    val stages
 
     // Digests of the helper scripts / references this task uses (Provenance.code/.data). A val
     // input, so editing a script or swapping a reference invalidates -resume for exactly the
@@ -35,6 +37,7 @@ process qcSummary {
     python3 "${params.scripts}/build_qc_summary.py" \\
         --inputs . \\
         --output cmp.qc.summary.tsv \\
-        --min-reads "${params.consensus_min_reads}"
+        --min-reads "${params.consensus_min_reads}" \\
+        --stages "${stages}"
     """
 }

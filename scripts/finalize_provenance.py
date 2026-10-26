@@ -662,6 +662,57 @@ def low_score_rescue_summary(params: dict) -> dict | None:
     }
 
 
+# ------------------------------------------------------- sample outcomes (X05/X06)
+
+
+def sample_outcomes(params: dict) -> dict | None:
+    """How the samples ended, from the QC summary's terminal_state column: counts per state and
+    the gated-stage statuses. Counts only -- no sample ID enters the record (per-sample states stay
+    in cmp.qc.summary.tsv on the cluster). None when there is no QC summary or no such column."""
+    root = params.get("qc_summary_dir")
+    if not root or root in {"null", "None"}:
+        return None
+    path = Path(root) / "cmp.qc.summary.tsv"
+    if not path.is_file():
+        return None
+    with path.open() as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    if not rows or "terminal_state" not in rows[0]:
+        return None
+
+    def tally(column):
+        out: dict[str, int] = defaultdict(int)
+        for row in rows:
+            out[row.get(column) or "NA"] += 1
+        return dict(sorted(out.items()))
+
+    by_state = tally("terminal_state")
+    return {
+        "samples": len(rows),
+        "by_state": by_state,
+        "failed": sum(n for state, n in by_state.items() if state.startswith("failed_at_")),
+        "metaphlan_status": tally("metaphlan_status") if "metaphlan_status" in rows[0] else {},
+        "humann_status": tally("humann_status") if "humann_status" in rows[0] else {},
+    }
+
+
+def render_sample_outcomes(outcomes: dict | None) -> list[str]:
+    if not outcomes:
+        return []
+    out = ["SAMPLE OUTCOMES (QC_SUMMARY/cmp.qc.summary.tsv, terminal_state)"]
+    for state, n in outcomes["by_state"].items():
+        out.append(f"  {n:>6}  {state}")
+    if outcomes["failed"]:
+        out.append(f"  *** {outcomes['failed']} sample(s) failed at a per-sample stage: they are missing")
+        out.append("      from the cohort tables because a task failed, not because they hold no microbes.")
+        out.append("      Which samples and stages: the terminal_state column of the QC summary.")
+    for column in ("metaphlan_status", "humann_status"):
+        if outcomes.get(column):
+            out.append(f"  {column:<18}" + "   ".join(f"{k} {v}" for k, v in outcomes[column].items()))
+    out.append("")
+    return out
+
+
 # ------------------------------------------------------------------------- rendering
 
 
@@ -771,6 +822,9 @@ def render(record: dict, processes: list[dict], software: dict[str, list[str]],
             add(f"  {column:<30}{'-' if value is None else value:>14}  ({totals.get(column + '_samples', 0)} samples)")
         add("")
 
+    for line in render_sample_outcomes((record.get("outputs") or {}).get("sample_outcomes")):
+        add(line)
+
     tables = (record.get("outputs") or {}).get("cohort_tables") or {}
     add("COHORT TABLES (sha256)")
     if tables.get("files"):
@@ -846,6 +900,8 @@ def main() -> int:
         "cohort_tables": output_checksums(launch_params),
         # --extract_low_score_mapped, aggregated over the BAM/CRAM inputs (counts only; L8).
         "low_score_rescue": low_score_rescue_summary(launch_params),
+        # How each sample ended (terminal_state), counts only (audit X05/X06).
+        "sample_outcomes": sample_outcomes(launch_params),
     }
 
     environment = record.setdefault("environment", {})
