@@ -23,6 +23,7 @@ import argparse
 import csv
 import json
 import re
+import shlex
 from pathlib import Path
 
 NA = "NA"
@@ -38,7 +39,7 @@ COLUMNS = [
     # low_as_mode_reason why (scripts/low_score_rescue.py REASONS). low_as_reads_extracted are
     # primary MAPPED records with AS < 30 added to the FLAG 4 reads (so reads_raw = FLAG 4 +
     # rescued); then how many of them survive host depletion and how many KrakenUniq classified.
-    # low_as_share_of_bracken = low_as_reads_classified / bracken_microbial_reads, in percent: an
+    # low_as_share_of_bracken = low_as_reads_classified / kraken_classified_reads, in percent: an
     # estimate of the rescued share of the table Bracken re-estimates from (Bracken itself does not
     # attribute reads). NA for FASTQ input; the read counts are 0 when the rescue was off
     # (low_as_no_as_records is NA then: records without AS are counted only when it is on).
@@ -58,14 +59,19 @@ COLUMNS = [
     "reads_raw", "bases_raw", "q30_rate_raw",
     "reads_after_fastp", "q30_rate_filtered", "duplication_rate",
     "reads_low_quality", "reads_too_short",
-    "adapter_scan_applied", "adapter_trimmed_reads", "pct_pass_fastp",
+    "adapter_scan_applied", "adapter_list", "adapter_trimmed_reads", "pct_pass_fastp",
     # host depletion
     "reads_after_hg38", "reads_after_t2t_phix", "reads_host_depleted",
     "pct_removed_hg38", "pct_removed_t2t_phix", "pct_removed_pangenome",
     "pct_retained_overall",      # host-depleted / reads entering fastp (the extracted subset for BAM/CRAM)
     "pct_retained_of_library",   # host-depleted / primary records in the BAM/CRAM; NA for FASTQ
     # classification
+    # KrakenUniq clade counts: classified = root (what --consensus_min_reads gates on), which
+    # includes human (9606) and synthetic construct (32630, vectors/adapters); microbial excludes both.
+    "kraken_classified_reads", "kraken_human_reads", "kraken_synthetic_reads",
     "bracken_microbial_reads", "cleared_consensus_gate",
+    # Bracken species estimates for the same two taxa, and their share of all species reads
+    "bracken_human_reads", "bracken_synthetic_reads", "pct_bracken_human", "pct_bracken_synthetic",
     "bracken_genera", "bracken_species",
     "metaphlan_genera", "metaphlan_species",
     "shared_genera", "shared_species",
@@ -268,12 +274,26 @@ def removed(before, after):
 # ------------------------------------------------------------------------ parsers
 
 
+def fastp_adapter_list(command: str) -> str:
+    """Basename of the --adapter_fasta fastp ran with, `none`, or NA without a command line."""
+    if not command:
+        return NA
+    words = shlex.split(command)
+    for i, word in enumerate(words):
+        if word.startswith("--adapter_fasta="):
+            return Path(word.split("=", 1)[1]).name
+        if word == "--adapter_fasta" and i + 1 < len(words):
+            return Path(words[i + 1]).name
+    return "none"
+
+
 def parse_fastp(path: Path) -> dict:
     data = json.loads(path.read_text())
     before = data.get("summary", {}).get("before_filtering", {})
     after = data.get("summary", {}).get("after_filtering", {})
     filtered = data.get("filtering_result", {})
     adapter = data.get("adapter_cutting")
+    adapter_list = fastp_adapter_list(data.get("command", ""))
     row = {
         "reads_raw": before.get("total_reads"),
         "bases_raw": before.get("total_bases"),
@@ -283,9 +303,11 @@ def parse_fastp(path: Path) -> dict:
         "duplication_rate": data.get("duplication", {}).get("rate"),
         "reads_low_quality": filtered.get("low_quality_reads"),
         "reads_too_short": filtered.get("too_short_reads"),
-        # `adapter_cutting` appears only when fastp was given --adapter_fasta, which is
-        # exactly the per-sample decision --adapter_trim auto makes.
-        "adapter_scan_applied": "true" if adapter else "false",
+        # Which adapter FASTA fastp was given, read from its own command line. fastp >= 1.x
+        # writes `adapter_cutting` also when it only auto-detected adapters, so that block
+        # cannot tell whether a FASTA was scanned. adapter_trimmed_reads counts both.
+        "adapter_scan_applied": NA if adapter_list == NA else ("false" if adapter_list == "none" else "true"),
+        "adapter_list": adapter_list,
         "adapter_trimmed_reads": (adapter or {}).get("adapter_trimmed_reads", NA),
     }
     row["pct_pass_fastp"] = pct(row["reads_after_fastp"], row["reads_raw"])
@@ -359,6 +381,61 @@ def parse_depletion(path: Path) -> dict:
         "reads_host_depleted": stages.get("host_depleted", NA),
         "_depletion_input": stages.get("input"),
     }
+
+
+HUMAN_TAXID = "9606"
+SYNTHETIC_TAXID = "32630"   # "synthetic construct": UniVec/EmVec vectors, adapters, primers
+
+
+def parse_krakenuniq_clades(path: Path) -> dict:
+    """Clade read counts for root, human and synthetic construct, keyed by column name.
+
+    Clade count = column 2 (taxReads) of the 9-column report; taxID is column 7. A taxon
+    the report does not list had no reads (0). Root is required: without it every value is NA.
+    """
+    counts = {}
+    with path.open() as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9:
+                continue
+            taxid, name = fields[6].strip(), fields[8].strip()
+            key = ("root" if name == "root" else "human" if taxid == HUMAN_TAXID
+                   else "synthetic" if taxid == SYNTHETIC_TAXID else None)
+            if key and key not in counts:
+                try:
+                    counts[key] = int(float(fields[1].strip()))
+                except ValueError:
+                    counts[key] = None
+    root = counts.get("root")
+    if root is None:
+        return {c: NA for c in ("kraken_classified_reads", "kraken_human_reads",
+                                "kraken_synthetic_reads", "bracken_microbial_reads")}
+    human, synthetic = counts.get("human") or 0, counts.get("synthetic") or 0
+    return {"kraken_classified_reads": root, "kraken_human_reads": human,
+            "kraken_synthetic_reads": synthetic,
+            "bracken_microbial_reads": max(root - human - synthetic, 0)}
+
+
+def parse_bracken_nonmicrobial(path: Path) -> dict:
+    """Bracken species estimates for human and synthetic construct, and their % of all species reads."""
+    total, found = 0.0, {HUMAN_TAXID: 0.0, SYNTHETIC_TAXID: 0.0}
+    with path.open() as handle:
+        for record in csv.DictReader(handle, delimiter="\t"):
+            try:
+                reads = float(record.get("new_est_reads") or 0)
+            except ValueError:
+                continue
+            total += reads
+            taxid = (record.get("taxonomy_id") or "").strip()
+            if taxid in found:
+                found[taxid] += reads
+    human, synthetic = int(found[HUMAN_TAXID]), int(found[SYNTHETIC_TAXID])
+    return {"bracken_human_reads": human, "bracken_synthetic_reads": synthetic,
+            "pct_bracken_human": pct(human, int(total)) if total else NA,
+            "pct_bracken_synthetic": pct(synthetic, int(total)) if total else NA}
 
 
 def parse_krakenuniq_microbial_reads(path: Path):
@@ -543,7 +620,8 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None,
         sample = sample_of(path, ".krakenuniq.report.txt")
         reads = parse_krakenuniq_microbial_reads(path)
         row = row_for(sample)
-        row["bracken_microbial_reads"] = NA if reads is None else reads
+        row.update(parse_krakenuniq_clades(path))
+        # The gate stays on the root count, exactly as Bracken.nf applies it.
         row["cleared_consensus_gate"] = (
             NA if reads is None else ("true" if reads >= min_reads else "false")
         )
@@ -564,6 +642,7 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None,
         sample = sample_of(path, ".bracken.S.report.txt")
         bracken_species[sample] = parse_bracken_taxa(path)
         row_for(sample)["bracken_species"] = len(bracken_species[sample])
+        row_for(sample).update(parse_bracken_nonmicrobial(path))
 
     for path in sorted(inputs.rglob("*.profiled_metagenome.txt")):
         sample = sample_of(path, ".profiled_metagenome.txt")
@@ -674,7 +753,7 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None,
                 if row.get(column) in (None, NA) and row.get("low_as_reads_extracted") == "0":
                     row[column] = 0
         row["low_as_share_of_bracken"] = pct(row.get("low_as_reads_classified"),
-                                             row.get("bracken_microbial_reads"))
+                                             row.get("kraken_classified_reads"))
         # Gated stages and the terminal state (audit X05). A sample is per-sample when the sheet
         # named it or a per-sample stage reported it; rows created only by decontamination or batch
         # correction (--start_from decontam / batch_correction) are not.

@@ -11,7 +11,7 @@ process filterReads {
     maxRetries 2
 
     input:
-    tuple val(sampleID), path(fastq_files), val(trim_adapters)
+    tuple val(sampleID), path(fastq_files), val(adapter_fasta)
 
     // Named emits: a second output turns the process handle into a multi-channel object,
     // and `filterReads(...).set{}` at the call site would fail with "Multi-channel output
@@ -44,8 +44,8 @@ process filterReads {
     }.join('\n')
     def fastp_input = input_list.size() == 1 ? "-i ${inputs}" : "--stdin"
     def fastp_prefix = input_list.size() == 1 ? "" : "{\n${tagged_commands}\n} |"
-    // Adapter scanning is decided per sample in main.nf (see --adapter_trim).
-    def adapter_args = trim_adapters ? "--adapter_fasta \"${params.adapters}\"" : ""
+    // The adapter FASTA (full, core or none) is decided per sample in main.nf (see --adapter_trim).
+    def adapter_args = adapter_fasta ? "--adapter_fasta \"${adapter_fasta}\"" : ""
 
     """
     set -euo pipefail

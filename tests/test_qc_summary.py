@@ -22,8 +22,11 @@ QC = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(QC)
 
 
-def write_fastp(directory, sample, raw=1000, kept=900, adapter=True):
+def write_fastp(directory, sample, raw=1000, kept=900, adapter=True, adapter_fasta=None):
+    """adapter: the `adapter_cutting` block. adapter_fasta: path in fastp's `command`, or None (no FASTA)."""
+    command = "fastp -l 45 " + (f"--adapter_fasta /x/ref/{adapter_fasta} " if adapter_fasta else "") + "--cut_tail -i r.fq.gz"
     payload = {
+        "command": command,
         "summary": {
             "before_filtering": {"total_reads": raw, "total_bases": raw * 100, "q30_rate": 0.95},
             "after_filtering": {"total_reads": kept, "total_bases": kept * 100, "q30_rate": 0.97},
@@ -42,7 +45,7 @@ def write_depletion(directory, sample, values=(900, 500, 300, 200)):
     (directory / f"{sample}.depletion_counts.tsv").write_text("\n".join(lines) + "\n")
 
 
-def write_krakenuniq(directory, sample, root=250000, unclassified=50000):
+def write_krakenuniq(directory, sample, root=250000, unclassified=50000, human=None, synthetic=None):
     """A real KrakenUniq report: 9 columns, and BOTH rows carry rank "no rank".
 
     The earlier fixture here invented a 6-column layout with rank "U"/"R", which is why
@@ -55,6 +58,10 @@ def write_krakenuniq(directory, sample, root=250000, unclassified=50000):
         f"5.0\t{unclassified}\t{unclassified}\t0\t0\t0\t0\tno rank\tunclassified",
         f"95.0\t{root}\t100\t5000\t1.1\t0.01\t1\tno rank\troot",
     ]
+    if human is not None:
+        lines.append(f"1.0\t{human}\t{human}\t10\t1\t0.1\t9606\tspecies\t                    Homo sapiens")
+    if synthetic is not None:
+        lines.append(f"1.0\t{synthetic}\t{synthetic}\t10\t1\t0.1\t32630\tspecies\t      synthetic construct")
     (directory / f"{sample}.krakenuniq.report.txt").write_text("\n".join(lines) + "\n")
 
 
@@ -86,13 +93,30 @@ class FastpTests(unittest.TestCase):
 
     def test_adapter_scan_recorded_both_ways(self):
         with tempfile.TemporaryDirectory() as tmp:
-            write_fastp(Path(tmp), "WITH", adapter=True)
+            write_fastp(Path(tmp), "FULL", adapter=True, adapter_fasta="known_adapters.fna")
+            write_fastp(Path(tmp), "CORE", adapter=True, adapter_fasta="illumina_core_adapters.fna")
             write_fastp(Path(tmp), "WITHOUT", adapter=False)
             rows = build_rows(tmp)
-            self.assertEqual(rows["WITH"]["adapter_scan_applied"], "true")
-            self.assertEqual(rows["WITH"]["adapter_trimmed_reads"], 25)
+            self.assertEqual(rows["FULL"]["adapter_scan_applied"], "true")
+            self.assertEqual(rows["FULL"]["adapter_list"], "known_adapters.fna")
+            self.assertEqual(rows["FULL"]["adapter_trimmed_reads"], 25)
+            self.assertEqual(rows["CORE"]["adapter_list"], "illumina_core_adapters.fna")
             self.assertEqual(rows["WITHOUT"]["adapter_scan_applied"], "false")
+            self.assertEqual(rows["WITHOUT"]["adapter_list"], "none")
             self.assertEqual(rows["WITHOUT"]["adapter_trimmed_reads"], "NA")
+
+    def test_autodetect_block_is_not_a_fasta_scan(self):
+        """fastp 1.x writes adapter_cutting when it only auto-detected: still no FASTA scan."""
+        with tempfile.TemporaryDirectory() as tmp:
+            write_fastp(Path(tmp), "AUTO", adapter=True)
+            row = build_rows(tmp)["AUTO"]
+            self.assertEqual(row["adapter_scan_applied"], "false")
+            self.assertEqual(row["adapter_list"], "none")
+            self.assertEqual(row["adapter_trimmed_reads"], 25)
+
+    def test_fastp_without_command_is_unknown(self):
+        self.assertEqual(QC.fastp_adapter_list(""), "NA")
+        self.assertEqual(QC.fastp_adapter_list("fastp --adapter_fasta=/a/b.fna -i x"), "b.fna")
 
 
 class DepletionTests(unittest.TestCase):
@@ -208,6 +232,40 @@ class GateTests(unittest.TestCase):
             write_krakenuniq(Path(tmp), "S1", root=150000, unclassified=10)
             row = build_rows(tmp, min_reads=100000)["S1"]
             self.assertEqual(row["bracken_microbial_reads"], 150000)
+
+
+class NonMicrobialTests(unittest.TestCase):
+    """Human and synthetic construct are classified but not microbial: report them apart."""
+
+    def test_kraken_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_krakenuniq(Path(tmp), "S1", root=250000, human=30000, synthetic=120000)
+            row = build_rows(tmp, min_reads=100000)["S1"]
+            self.assertEqual(row["kraken_classified_reads"], 250000)
+            self.assertEqual(row["kraken_human_reads"], 30000)
+            self.assertEqual(row["kraken_synthetic_reads"], 120000)
+            self.assertEqual(row["bracken_microbial_reads"], 100000)
+            # the gate still uses the root count, exactly as Bracken.nf does
+            self.assertEqual(row["cleared_consensus_gate"], "true")
+
+    def test_absent_taxa_are_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_krakenuniq(Path(tmp), "S1", root=5000)
+            row = build_rows(tmp)["S1"]
+            self.assertEqual((row["kraken_human_reads"], row["kraken_synthetic_reads"]), (0, 0))
+            self.assertEqual(row["bracken_microbial_reads"], 5000)
+
+    def test_bracken_species_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            header = "name\ttaxonomy_id\ttaxonomy_lvl\tkraken_assigned_reads\tadded_reads\tnew_est_reads\tfraction_total_reads"
+            rows = ["synthetic construct\t32630\tS\t1\t1\t600\t0.6", "Homo sapiens\t9606\tS\t1\t1\t100\t0.1",
+                    "Escherichia coli\t562\tS\t1\t1\t300\t0.3"]
+            (Path(tmp) / "S1.bracken.S.report.txt").write_text("\n".join([header] + rows) + "\n")
+            row = build_rows(tmp)["S1"]
+            self.assertEqual(row["bracken_synthetic_reads"], 600)
+            self.assertEqual(row["bracken_human_reads"], 100)
+            self.assertEqual(row["pct_bracken_synthetic"], "60.00")
+            self.assertEqual(row["pct_bracken_human"], "10.00")
 
 
 class TaxonCountTests(unittest.TestCase):

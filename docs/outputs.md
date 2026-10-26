@@ -14,7 +14,7 @@ from, next to that run's `work/` and `pipeline_info/`:
 | `HUMANN3` | gene families, pathway abundance and coverage, plus `merged/` |
 | `04_DECONTAMINATION`, `05_BATCH_CORRECTION`, `06_VALIDATION` | optional stages; see their sections |
 | `MULTIQC` | `multiqc_report.html` over fastp JSON and all five FastQC passes |
-| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 64 columns) and `cmp_cohort_report.html` |
+| `QC_SUMMARY` | `cmp.qc.summary.tsv` (one row per sample, 72 columns) and `cmp_cohort_report.html` |
 
 Each directory can be moved on its own with the matching parameter: `--unmapped_bam_dir`,
 `--fastqc_dir`, `--mapped_reads_dir`, `--krakenuniq_bracken_dir`, `--metaphlan4_dir`,
@@ -101,7 +101,7 @@ All `NA` for FASTQ input.
 | `low_as_no_as_records` | primary mapped records without an AS tag (never extracted; counted only when the rescue is on, `NA` otherwise) |
 | `low_as_reads_after_depletion` | rescued reads still present in the host-depleted FASTQ |
 | `low_as_reads_classified` | rescued reads KrakenUniq classified |
-| `low_as_share_of_bracken` | `low_as_reads_classified` as a percentage of `bracken_microbial_reads` (KrakenUniq classified reads, the input Bracken re-estimates from). Bracken does not attribute individual reads, so this is the rescued share of its input, not of each taxon |
+| `low_as_share_of_bracken` | `low_as_reads_classified` as a percentage of `kraken_classified_reads` (KrakenUniq classified reads, the input Bracken re-estimates from). Bracken does not attribute individual reads, so this is the rescued share of its input, not of each taxon |
 
 With the rescue on, `extracted_unmapped_records` keeps its meaning (FLAG 4 only) and
 `reads_raw` (the reads entering fastp) is `extracted_unmapped_records + low_as_reads_extracted`.
@@ -173,7 +173,7 @@ Every run produces, unless switched off:
 
 - **`RESULTS/MULTIQC/multiqc_report.html`** — fastp JSON plus all five FastQC passes
   (raw, filtered, post-GRCh38, post-T2T, post-pangenome). Disable with `--skip_multiqc true`.
-- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 64 columns (see *Outputs*).
+- **`RESULTS/QC_SUMMARY/cmp.qc.summary.tsv`** — one row per sample, 72 columns (see *Outputs*).
 - **`RESULTS/QC_SUMMARY/cmp_cohort_report.html`** — a self-contained page (no network, no
   CDN) with the retention chart and the tables. Disable with `--skip_cohort_report true`.
 - **`pipeline_info/RUN_REPORT.txt`** and the provenance record — see *Outputs*.

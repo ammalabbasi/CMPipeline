@@ -4,6 +4,21 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **Reads extracted from BAM/CRAM are adapter-trimmed again (`--adapter_trim auto`).** Since 16 Sep 2026
+  `auto` passed no adapter FASTA for them, assuming aligned reads were trimmed. GDC did not trim TCGA, and
+  bwa soft-clips adapter read-through, so it reached KrakenUniq as *synthetic construct*. `auto` now uses a
+  5-sequence Illumina list (`--adapters_core`, `ref/illumina_core_adapters.fna`) for them; FASTQ keeps the
+  234-sequence list. Synthetic test: all planted adapters found at 17 s vs 645 s for the full list.
+  **Read counts after fastp, and synthetic-construct counts, change for BAM/CRAM input.**
+
+- **QC summary: human and synthetic construct reported apart from microbial reads.** New
+  `kraken_classified_reads` (the root count the MetaPhlAn gate uses, unchanged), `kraken_human_reads`,
+  `kraken_synthetic_reads`, and Bracken species-level `bracken_human_reads`, `bracken_synthetic_reads`,
+  `pct_bracken_human`, `pct_bracken_synthetic`. **`bracken_microbial_reads` now excludes human and
+  synthetic construct**; before, it was the root count. `low_as_share_of_bracken` now divides by
+  `kraken_classified_reads` (same value as before). New `adapter_list`; `adapter_scan_applied` is read from
+  fastp's command line, because fastp 1.x writes `adapter_cutting` also for auto-detection alone.
+
 - **Tool update (2026-10-26):** minimap2 2.28 → 2.31, samtools → 1.24, fastp 0.24.0 → 1.3.7, Bracken 2.9 →
   3.1p1, bowtie2 (MetaPhlAn env) → 2.5.5; the Kraken/Bracken env is reduced to the tools the task runs.
   These are the versions pksProfiler validated. **fastp 1.x can change read counts** (poly-G trimming and
@@ -131,7 +146,7 @@ the low-biomass tail.
   extraction (or before classification, for the depth floor), so it is in no cohort table; `flag` profiles
   it and only marks it.
 - QC summary: `terminal_state` `not_assessable_<reason>`, `sample_status` `not_assessable`, new column
-  `qc_floor` (64 columns). `RUN_REPORT.txt` *SAMPLE OUTCOMES* states the count and that they are not
+  `qc_floor` (column count then: 64). `RUN_REPORT.txt` *SAMPLE OUTCOMES* states the count and that they are not
   negatives; the cohort report adds a *Not assessable* tile.
 - **Changes which samples are reported, not any count**: a BAM/CRAM with zero unmapped records, or with
   an upstream unmapped filter in its `@PG`, no longer reaches the cohort tables by default (zero-record

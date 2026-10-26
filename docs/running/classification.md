@@ -4,18 +4,31 @@ How KrakenUniq/Bracken, the MetaPhlAn gate and consensus behave, plus adapter tr
 
 ## Adapter trimming
 
-`--adapter_trim` controls whether fastp scans reads against `--adapters`
-(`ref/known_adapters.fna`, 234 sequences):
+`--adapter_trim` chooses the adapter FASTA fastp scans reads against:
 
-- `auto` (default) scans raw FASTQ input, and skips the scan for reads extracted
-  from a BAM or CRAM, which were adapter-trimmed before they were aligned.
-- `always` scans every sample; `never` scans none.
+- `auto` (default): raw FASTQ against `--adapters` (`ref/known_adapters.fna`, 234
+  sequences); reads extracted from a BAM or CRAM against `--adapters_core`
+  (`ref/illumina_core_adapters.fna`: TruSeq read 1/2, TruSeq2 SE/PE, Nextera).
+- `always`: the 234-sequence list for every sample. `never`: no FASTA.
 
-The scan is expensive and, on aligned input, produces nothing: measured on one
-aligned CRAM, `filterReads` took 2 h 50 m with `--adapter_fasta` and 3 m 15 s
-without it, with fastp reporting no adapter detected and 0 reads trimmed.
-Skipping the FASTA scan does not disable adapter trimming; fastp still
-auto-detects adapters.
+Without a FASTA fastp still auto-detects one adapter per read, but no more.
+
+**Why BAM/CRAM reads are scanned at all.** Until 2026-10-26 `auto` skipped the scan for
+them, on the assumption that aligned reads were trimmed before alignment. GDC did not trim
+TCGA before `bwa mem`, which soft-clips adapter read-through, so the extracted reads still
+carry it. Untrimmed adapter is classified by KrakenUniq as *synthetic construct* (UniVec),
+which dominated Bracken output in CRC50 for one sequencing centre.
+
+**Why not the full list.** It is BBTools' generic `adapters.fa`: about 200 of its 234
+entries are the same TruSeq, RNA and Nextera adapters repeated once per 6-8 bp index
+barcode, plus retired kits (SOLiD, DpnII/NlaIII gene expression). Matching starts at the
+shared prefix, so the barcode variants add almost nothing, and fastp's cost scales with the
+list: on one aligned CRAM `filterReads` took 2 h 50 m with it versus 3 m 15 s without. On
+300,000 synthetic 151 bp reads with 60,000 planted adapter tails (fastp 1.3.7): no FASTA 5 s
+and 30,470 reads trimmed; core list 17 s, 61,426; full list 645 s, 66,112.
+
+The QC summary's `adapter_list` column records which FASTA each sample used (read from fastp's own
+command line; fastp 1.x writes an `adapter_cutting` block even for auto-detection alone).
 
 ## Low-score mapped reads (TCGA GDC BAMs)
 
@@ -75,8 +88,12 @@ count, the clade count of the `root` row of its KrakenUniq report, is a per-samp
 **MetaPhlAn 4 runs only when that count is at least `--consensus_min_reads` (100000).**
 Samples below the gate are logged and skip MetaPhlAn, and therefore HUMAnN3 too (see
 *Functional profiling*). Their Bracken counts still go forward. The QC summary's
-`bracken_microbial_reads` and `cleared_consensus_gate` columns show, per sample, the count and
-whether it cleared.
+`kraken_classified_reads` and `cleared_consensus_gate` columns show, per sample, the count and
+whether it cleared. That count includes reads classified as human (`kraken_human_reads`, taxID
+9606) and as synthetic construct (`kraken_synthetic_reads`, 32630: vectors, adapters, primers);
+`bracken_microbial_reads` is the classified count minus both. `bracken_human_reads`,
+`bracken_synthetic_reads` and their `pct_bracken_*` give the same two taxa from the Bracken
+species table, as a share of all species-level reads.
 
 | Parameter | Default | Meaning |
 |---|---|---|

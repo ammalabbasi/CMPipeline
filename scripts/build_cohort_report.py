@@ -373,13 +373,17 @@ def render(rows, record, qc_path, validation_report=None, consensus_status=None)
          ("pct_retained_overall", "Retained %", fmt_pct)],
         "Filtering and depletion",
         "Per-sample read accounting. <code>Adapter scan</code> records whether the "
-        "234-sequence FASTA was used for that sample — <code>--adapter_trim auto</code> "
-        "skips it for reads extracted from an alignment.",
+        "adapter FASTA was used for that sample — <code>--adapter_trim auto</code> "
+        "uses the 234-sequence list for FASTQ and the 5-sequence Illumina list for reads "
+        "extracted from an alignment.",
     )
 
     classification = table(
         rows,
         [("sample", "Sample", html.escape),
+         ("kraken_classified_reads", "Classified reads", fmt_int),
+         ("kraken_human_reads", "Human", fmt_int),
+         ("kraken_synthetic_reads", "Synthetic construct", fmt_int),
          ("bracken_microbial_reads", "Microbial reads", fmt_int),
          ("cleared_consensus_gate", "Cleared gate", lambda v: html.escape(str(v or "—"))),
          ("bracken_genera", "Bracken genera", fmt_int),
@@ -389,8 +393,10 @@ def render(rows, record, qc_path, validation_report=None, consensus_status=None)
          ("metaphlan_species", "MetaPhlAn species", fmt_int),
          ("shared_species", "Shared species", fmt_int)],
         "Classification and profiler agreement",
-        "<code>Microbial reads</code> is the KrakenUniq <code>root</code> clade count, i.e. the "
-        "reads classified at all — the same quantity <code>--consensus_min_reads</code> gates on. A sample below "
+        "<code>Classified reads</code> is the KrakenUniq <code>root</code> clade count, i.e. the "
+        "reads classified at all — the quantity <code>--consensus_min_reads</code> gates on. It includes "
+        "<code>Human</code> (taxID 9606) and <code>Synthetic construct</code> (32630: vectors, adapters, "
+        "primers); <code>Microbial reads</code> is classified minus both. A sample below "
         "the gate has no MetaPhlAn profile, so its MetaPhlAn and shared columns read "
         "&mdash;. <code>Shared</code> is the per-sample intersection of the two profilers.",
         empty_when="bracken_microbial_reads",

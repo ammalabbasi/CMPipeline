@@ -216,6 +216,7 @@ params.metaphlan_index="mpa_vJun23_CHOCOPhlAnSGB_202307"  // Bowtie2 index name 
 params.humann3_nucleotide_db=null  // Set in a site profile or with --humann3_nucleotide_db
 params.humann3_protein_db=null     // Set in a site profile or with --humann3_protein_db
 params.adapters="${projectDir}/ref/known_adapters.fna"
+params.adapters_core="${projectDir}/ref/illumina_core_adapters.fna"  // 5 Illumina sequences, for reads extracted from BAM/CRAM
 params.adapter_trim="auto"  // auto | always | never -- see the adapter_trim note in the workflow below
 
 // ============================================================================
@@ -420,6 +421,7 @@ workflow {
         requirePathParam('hg38_db', params.hg38_db, 'for host depletion')
         requirePathParam('t2t_phix_db', params.t2t_phix_db, 'for host depletion')
         if (adapterTrimMode != 'never') requirePathParam('adapters', params.adapters, 'for adapter trimming (or use --adapter_trim never)')
+        if (adapterTrimMode == 'auto') requirePathParam('adapters_core', params.adapters_core, 'for adapter trimming of BAM/CRAM reads (or use --adapter_trim always|never)')
 
         def pangenomeIndex = pathParam('pangenome_db', params.pangenome_db)
         if (pangenomeIndex && pangenomeIndex.isDirectory() && !pangenomeIndex.listFiles().any { it.name.endsWith('.mmi') }) {
@@ -705,6 +707,7 @@ workflow {
                 humann3_protein_db   : Provenance.data(params.humann3_protein_db),
                 cram_reference       : Provenance.data(params.cram_reference),
                 adapters             : Provenance.code(params.adapters),
+                adapters_core        : Provenance.code(params.adapters_core),
                 // Alignment validation lane (audit C06). Recorded only when it runs: the cache
                 // listing is not free on Lustre, and an unused path is not a dependency.
                 validation_ref       : runValidation ? Provenance.data(params.validation_ref) : 'unused',
@@ -829,8 +832,8 @@ workflow {
             qcParts << extractReads.out.counts   // *.extract_counts.tsv: BAM/CRAM library denominator (C07)
             qcParts << extractReads.out.aligner  // *.upstream_aligner.tsv: @PG aligner/-T and low-AS mode (L8)
             qcParts << extractReads.out.provenance  // *.input_provenance.tsv: @SQ fingerprint, @PG chain (X13)
-            // `pretrimmed` marks reads that came out of an aligned BAM/CRAM: whoever
-            // produced the alignment adapter-trimmed them before aligning.
+            // `pretrimmed` marks reads that came out of an aligned BAM/CRAM. They are NOT
+            // necessarily adapter-free (GDC did not trim); they get the short adapter list.
             INPUTS_BY_TYPE.fastq
                 .map { sampleID, inputType, reads, references -> tuple(sampleID, reads, false) }
                 .mix(EXTRACTED_READS.map { sampleID, reads -> tuple(sampleID, reads, true) })
@@ -839,22 +842,26 @@ workflow {
             // Perform FastQC on the extracted fastq files
             FASTQC1(UNMAPPED_READS.map { sampleID, reads, pretrimmed -> tuple(sampleID, reads) })
 
-            // adapter_trim: `auto` scans raw FASTQ against --adapters and skips that scan for
-            // reads extracted from an alignment. Measured on an aligned CRAM: fastp with
-            // --adapter_fasta (234 sequences) took 2 h 50 m and trimmed 0 reads, against
-            // 3 m 15 s without it. `always` and `never` override the per-sample decision.
-            // Dropping --adapter_fasta does not disable adapter trimming: fastp still
-            // auto-detects adapters.
+            // adapter_trim: `auto` scans raw FASTQ against --adapters (234 sequences) and reads
+            // extracted from an alignment against --adapters_core (5 Illumina sequences).
+            // The full list is too slow for BAM/CRAM reads: 2 h 50 m vs 3 m 15 s on one aligned
+            // CRAM. Skipping the scan altogether (as before 2026-10-26) left adapter read-through
+            // in: GDC does not trim before bwa, which soft-clips adapters, so extracted reads
+            // still carry them. On synthetic reads (fastp 1.3.7) the core list found all
+            // planted adapters at 3x the no-list time, the full list at 130x.
+            // `always` uses the full list for every sample; `never` passes none (fastp still
+            // auto-detects one adapter per read).
             UNMAPPED_READS
                 .map { sampleID, reads, pretrimmed ->
-                    def trimAdapters = adapterTrimMode == 'always' ? true :
-                        (adapterTrimMode == 'never' ? false : !pretrimmed)
-                    tuple(sampleID, reads, trimAdapters)
+                    def adapterFasta = adapterTrimMode == 'always' ? params.adapters.toString() :
+                        (adapterTrimMode == 'never' ? '' :
+                            (pretrimmed ? params.adapters_core.toString() : params.adapters.toString()))
+                    tuple(sampleID, reads, adapterFasta)
                 }
                 .set { FILTER_INPUT }
 
             // Filter poor quality reads using fastp
-            filterReads(FILTER_INPUT, depsOf([params.adapters]))
+            filterReads(FILTER_INPUT, depsOf([params.adapters, params.adapters_core]))
             filterReads.out.reads.set { FILTERED_ALL }
 
             // A sample that has no reads left after filtering is dropped with a warning
