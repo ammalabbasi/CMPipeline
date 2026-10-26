@@ -143,7 +143,7 @@ class ZeroTotalBehaviour(unittest.TestCase):
 
     def test_human_and_phix_removed_before_decontam(self):
         """June-Young's hardcoded_removal_list: not microbes, so not evidence either way."""
-        names = ["Homo_sapiens", "Sinsheimervirus phiX174", "Fusobacterium_nucleatum", "Bacteroides_fragilis",
+        names = ["Homo_sapiens", "Sinsheimervirus phiX174", "synthetic_construct", "Bacteroides_fragilis",
                  "Escherichia_coli", "Ralstonia pickettii"]
         with open(f"{self.dir}/otu.tsv") as f:
             text = f.read()
@@ -151,12 +151,12 @@ class ZeroTotalBehaviour(unittest.TestCase):
             text = text.replace(f"g__G{j}\t", f"d__X|g__{n.replace(' ', '_').split('_')[0]}|s__{n}\t")
         with open(f"{self.dir}/otu.tsv", "w") as f:
             f.write(text)
-        r = self.run_r("--remove_taxa", "Homo sapiens;Sinsheimervirus phiX174", rank="species")
+        r = self.run_r("--remove_taxa", "Homo sapiens;Sinsheimervirus phiX174;synthetic construct", rank="species")
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         with open(f"{self.dir}/t.filter_report.tsv") as f:
             taxa = {row["taxon_id"] for row in csv.DictReader(f, delimiter="\t")}
-        self.assertFalse(any("Homo" in x or "phiX" in x for x in taxa))
-        self.assertEqual(len(taxa), 4)
+        self.assertFalse(any("Homo" in x or "phiX" in x or "synthetic" in x for x in taxa))
+        self.assertEqual(len(taxa), 3)
         with open(f"{self.dir}/t.sample_validation.tsv") as f:
             sv = {row["sample_id"]: row for row in csv.DictReader(f, delimiter="\t")}
         self.assertGreater(float(sv["S7"]["reads_removed_pre_decontam"]), 0)

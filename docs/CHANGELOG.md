@@ -12,8 +12,10 @@ Not yet released; these are the changes since the last tagged state of `main`.
   Ludmil's reagent check). It removes nothing; decontam's calls are unchanged.
 - **Human and PhiX are removed before decontam again (`--decontam_remove_taxa`).** June-Young's script removed
   *Homo sapiens* and PhiX first (`hardcoded_removal_list`); the 24 Sep rewrite dropped that. Default
-  `Homo sapiens;Sinsheimervirus phiX174` (KrakenUniq's names; genera `Homo` / `Sinsheimervirus` at genus rank),
-  exact-name match instead of his substring match. **Decontam input, and so its calls, can change.**
+  `Homo sapiens;Sinsheimervirus phiX174;synthetic construct` (KrakenUniq's names; genera `Homo` /
+  `Sinsheimervirus` at genus rank). *Synthetic construct* was added (Ammal, 26 Oct 2026): consensus already
+  drops it, but a Bracken pass-through table carried it into decontam. Exact-name match instead of his
+  substring match. **Decontam input, and so its calls, can change.**
 
 - **Validation reference is ANI-curated; new `validated_group` status (decision 36).** Genomes RefSeq filed
   under the wrong species move to the species they belong to (4 *Fusobacterium* "nucleatum" genomes are
