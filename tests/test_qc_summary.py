@@ -245,8 +245,16 @@ class NonMicrobialTests(unittest.TestCase):
             self.assertEqual(row["kraken_human_reads"], 30000)
             self.assertEqual(row["kraken_synthetic_reads"], 120000)
             self.assertEqual(row["bracken_microbial_reads"], 100000)
-            # the gate still uses the root count, exactly as Bracken.nf does
-            self.assertEqual(row["cleared_consensus_gate"], "true")
+            self.assertEqual(row["cleared_consensus_gate"], "true")      # 100000 microbial >= 100000
+
+    def test_gate_ignores_human_and_synthetic(self):
+        """Decision 1 (27 Oct 2026): 98% synthetic construct must not carry a sample through the gate."""
+        with tempfile.TemporaryDirectory() as tmp:
+            write_krakenuniq(Path(tmp), "S1", root=5_000_000, human=1_000, synthetic=4_950_000)
+            row = build_rows(tmp, min_reads=100000)["S1"]
+            self.assertEqual(row["kraken_classified_reads"], 5_000_000)
+            self.assertEqual(row["bracken_microbial_reads"], 49_000)
+            self.assertEqual(row["cleared_consensus_gate"], "false")
 
     def test_absent_taxa_are_zero(self):
         with tempfile.TemporaryDirectory() as tmp:

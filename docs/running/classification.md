@@ -16,8 +16,11 @@ Without a FASTA fastp still auto-detects one adapter per read, but no more.
 **Why BAM/CRAM reads are scanned at all.** Until 2026-10-26 `auto` skipped the scan for
 them, on the assumption that aligned reads were trimmed before alignment. GDC did not trim
 TCGA before `bwa mem`, which soft-clips adapter read-through, so the extracted reads still
-carry it. Untrimmed adapter is classified by KrakenUniq as *synthetic construct* (UniVec),
-which dominated Bracken output in CRC50 for one sequencing centre.
+carry it: in a 10-sample CRC50 regression (27 Oct 2026) fastp trimmed adapter from a median 33% of
+these reads with the short list (27% by auto-detection alone), removing about 5 low-level species
+calls per sample. It did **not** explain the *synthetic construct* reads (UniVec) that make up 94-99%
+of Bracken species reads in those samples: their share was unchanged (98.5%), so they are some other
+vector or library sequence, not adapter read-through.
 
 **Why not the full list.** It is BBTools' generic `adapters.fa`: about 200 of its 234
 entries are the same TruSeq, RNA and Nextera adapters repeated once per 6-8 bp index
@@ -83,13 +86,16 @@ which is common for RNA-seq BAMs written without STAR's `--outSAMunmapped Within
 
 ## Classification and consensus
 
-KrakenUniq and Bracken run first for every sample. The sample's classified microbial read
-count, the clade count of the `root` row of its KrakenUniq report, is a per-sample gate:
+KrakenUniq and Bracken run first for every sample. The sample's **microbial** read count is a
+per-sample gate: the clade count of the `root` row of its KrakenUniq report minus the human
+(taxID 9606) and *synthetic construct* (32630) clade counts.
 **MetaPhlAn 4 runs only when that count is at least `--consensus_min_reads` (100000).**
+Until 27 Oct 2026 the gate used the `root` count alone, which in CRC50 was 94-99% synthetic
+construct, so vector reads decided which samples reached MetaPhlAn.
 Samples below the gate are logged and skip MetaPhlAn, and therefore HUMAnN3 too (see
 *Functional profiling*). Their Bracken counts still go forward. The QC summary's
-`kraken_classified_reads` and `cleared_consensus_gate` columns show, per sample, the count and
-whether it cleared. That count includes reads classified as human (`kraken_human_reads`, taxID
+`bracken_microbial_reads` and `cleared_consensus_gate` columns show, per sample, the count and
+whether it cleared. `kraken_classified_reads` (the `root` count) includes reads classified as human (`kraken_human_reads`, taxID
 9606) and as synthetic construct (`kraken_synthetic_reads`, 32630: vectors, adapters, primers);
 `bracken_microbial_reads` is the classified count minus both. `bracken_human_reads`,
 `bracken_synthetic_reads` and their `pct_bracken_*` give the same two taxa from the Bracken

@@ -147,6 +147,21 @@ class CountAndMask(unittest.TestCase):
                                    capture_output=True, text=True)
                 self.assertEqual(r.returncode == 0, ok, r.stderr)
 
+    def test_gate_is_microbial_reads(self):
+        """Decision 1 (27 Oct 2026): root minus human (9606) and synthetic construct (32630)."""
+        text = (ROOT / "Modules/Bracken.nf").read_text()
+        shell = text[text.index("    MICROBIAL_READS="):text.index('    echo "Bracken microbial reads')]
+        shell = shell.replace("\\$", "$") + '\necho "$MICROBIAL_READS"'
+        body = ("1\t5000000\t0\t0\t0\t0\t1\tno rank\troot\n"
+                "1\t1000\t0\t0\t0\t0\t9606\tspecies\t      Homo sapiens\n"
+                "1\t4950000\t0\t0\t0\t0\t32630\tspecies\t    synthetic construct\n"
+                "1\t49000\t0\t0\t0\t0\t2\tsuperkingdom\t  Bacteria\n")
+        report = self.write("kraken.tsv", body)
+        r = subprocess.run(["bash", "-eu", "-c", shell], env=dict(os.environ, REPORT=str(report)),
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "49000")
+
     def test_fastp_count_missing_invalid_and_true_zero(self):
         text = (ROOT / "Modules/filter_reads.nf").read_text()
         shell = text[text.index("    awk '"):text.rindex('    """')]

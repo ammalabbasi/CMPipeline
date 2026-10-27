@@ -124,7 +124,7 @@ params.bracken_read_length = 'auto'  // auto: per sample, the kmer_distrib lengt
 // count. The committed value was 2; an edit had set it to ${task.cpus}, so abundance output
 // changed with the CPU count and the retry attempt (audit A04, 2026-09-23).
 params.bracken_threshold = 2
-params.consensus_min_reads = 100000  // Per-sample minimum KrakenUniq root (classified) reads for MetaPhlAn
+params.consensus_min_reads = 100000  // Per-sample minimum microbial reads (KrakenUniq root - human - synthetic construct) for MetaPhlAn
 
 // ============================================================================
 // INPUT/OUTPUT PATHS

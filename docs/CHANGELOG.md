@@ -4,6 +4,13 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **The MetaPhlAn gate counts microbial reads (decision 1, 27 Oct 2026).** `--consensus_min_reads` was
+  compared with the KrakenUniq `root` count, which includes human and *synthetic construct*; in CRC50 the
+  latter was 94-99% of it, so vector reads decided which samples reached MetaPhlAn (and HUMAnN). The gate
+  now uses root minus human (9606) minus synthetic construct (32630), the QC summary's
+  `bracken_microbial_reads`. **Fewer samples may clear the gate**; with fewer than 2 MetaPhlAn samples,
+  consensus passes the Bracken tables through.
+
 - **June-Young's known-contaminant list is back, as a flag (`--known_contaminants`, `ref/known_contaminants.tsv`).**
   His decontam script carried 95 species (`blacklist_species`; mostly reagent genera such as *Acinetobacter*,
   *Methylobacterium*, *Sphingomonas*, *Ralstonia*) and used them to label plots. The 24 Sep rewrite of
@@ -29,10 +36,12 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 - **Reads extracted from BAM/CRAM are adapter-trimmed again (`--adapter_trim auto`).** Since 16 Sep 2026
   `auto` passed no adapter FASTA for them, assuming aligned reads were trimmed. GDC did not trim TCGA, and
-  bwa soft-clips adapter read-through, so it reached KrakenUniq as *synthetic construct*. `auto` now uses a
+  bwa soft-clips adapter read-through, so the extracted reads carried it. `auto` now uses a
   5-sequence Illumina list (`--adapters_core`, `ref/illumina_core_adapters.fna`) for them; FASTQ keeps the
   234-sequence list. Synthetic test: all planted adapters found at 17 s vs 645 s for the full list.
-  **Read counts after fastp, and synthetic-construct counts, change for BAM/CRAM input.**
+  10-sample CRC50 regression: adapter trimmed from a median 33% of reads (27% by auto-detection alone),
+  ~1.6% fewer reads after fastp, ~5 fewer low-level species per sample. The *synthetic construct* share
+  did not change (98.5%): it is not adapter read-through. **Read counts after fastp change for BAM/CRAM input.**
 
 - **QC summary: human and synthetic construct reported apart from microbial reads.** New
   `kraken_classified_reads` (the root count the MetaPhlAn gate uses, unchanged), `kraken_human_reads`,

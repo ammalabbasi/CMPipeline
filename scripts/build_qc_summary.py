@@ -622,9 +622,11 @@ def build(inputs: Path, min_reads: int, stages: list[str] | None = None,
         reads = parse_krakenuniq_microbial_reads(path)
         row = row_for(sample)
         row.update(parse_krakenuniq_clades(path))
-        # The gate stays on the root count, exactly as Bracken.nf applies it.
+        # The gate uses microbial reads (root minus human and synthetic construct), exactly as
+        # Bracken.nf applies it (decision 1, 27 Oct 2026).
+        micro = row.get("bracken_microbial_reads")
         row["cleared_consensus_gate"] = (
-            NA if reads is None else ("true" if reads >= min_reads else "false")
+            NA if micro in (None, NA) else ("true" if micro >= min_reads else "false")
         )
 
     bracken_genera: dict[str, set[str]] = {}

@@ -110,7 +110,11 @@ process Bracken {
         python "${params.scripts}"/kreport2mpa.py -r \${bracken_kraken_report} -o \${bracken_kraken_mpa_report} --display-header
     done
 
-    # Gate MetaPhlAn per sample using the classified microbial read count.
+    # Gate MetaPhlAn per sample on MICROBIAL reads: the KrakenUniq root clade count minus the human
+    # (taxID 9606) and synthetic-construct (32630: vectors, UniVec) clade counts. Until 2026-10-27 the gate
+    # used the root count alone; in CRC50, 93-99% of it was synthetic construct (10-sample regression,
+    # arm C), so the gate was deciding on vector reads (Ammal, decision 1, 27 Oct 2026). Same arithmetic as
+    # build_qc_summary.py's bracken_microbial_reads.
     #
     # This read three things wrong and silently returned 0 for every sample from
     # 2026-09-04 until 2026-09-23, so MetaPhlAn never ran and consensus never had
@@ -126,15 +130,22 @@ process Bracken {
     MICROBIAL_READS=\$(awk -F '\t' '
         !/^#/ {
             n=\$9; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", n)
+            t=\$7; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", t)
+            v=\$2; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", v)
             if(n=="root") {
-                found++; v=\$2; gsub(/^[ \t\r]+|[ \t\r]+\$/, "", v)
+                found++
                 if(NF!=9 || v !~ /^[0-9]+\$/) bad=1
                 total=v
+            } else if((t=="9606" || t=="32630") && !(t in seen)) {
+                seen[t]=1
+                if(v !~ /^[0-9]+\$/) bad=1
+                other+=v
             }
         }
         END {
             if(found!=1 || bad) { print "ERROR: expected exactly one valid KrakenUniq root count" > "/dev/stderr"; exit 1 }
-            print total
+            m=total-other; if(m<0) m=0
+            print m
         }' "\${REPORT}")
     echo "Bracken microbial reads for ${SAMPLE_NAME}: \${MICROBIAL_READS}"
     if [[ "\${MICROBIAL_READS}" -ge "${params.consensus_min_reads}" ]]; then
