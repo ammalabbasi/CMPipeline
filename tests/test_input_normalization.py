@@ -86,8 +86,9 @@ class InputNormalizationTests(unittest.TestCase):
         text = (ROOT / "main.nf").read_text()
         self.assertIn('params.adapter_trim="auto"', text)
         self.assertIn("adapterTrimMode == 'always'", text)
-        # auto: BAM/CRAM reads get the short Illumina list, not nothing (GDC did not trim)
-        self.assertIn("pretrimmed ? params.adapters_core.toString() : params.adapters.toString()", text)
+        # auto: every sample (FASTQ and BAM/CRAM) gets the short Illumina list; always: the 234 list
+        self.assertIn("(adapterTrimMode == 'never' ? '' : params.adapters_core.toString())", text)
+        self.assertNotIn("pretrimmed ? params.adapters_core", text)
         core = (ROOT / "ref" / "illumina_core_adapters.fna").read_text().split()
         seqs = [s for s in core if not s.startswith(">")]
         self.assertIn("AGATCGGAAGAGCACACGTCTGAACTCCAGTCA", seqs)   # TruSeq read 1

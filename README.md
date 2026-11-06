@@ -116,7 +116,7 @@ The main options. [`docs/parameters.md`](docs/parameters.md) lists all of them.
 | `--pangenome_db` | not set | No | extra pangenome depletion (one `.mmi` or a directory of them) |
 | `--kraken_db`, `--metaphlan_db` | directories | For classification | classifier databases |
 | `--outdir` | `RESULTS/` in the launch directory | No | output directory |
-| `--adapter_trim` | `auto` (default), `always`, `never` | No | adapter FASTA fastp scans: `auto` = 234-sequence list for FASTQ, 5-sequence Illumina list for reads from BAM/CRAM; `always` = 234 for all; `never` = none |
+| `--adapter_trim` | `auto` (default), `always`, `never` | No | adapter FASTA fastp scans: `auto` = 5-sequence Illumina list for every sample; `always` = the 234-sequence list; `never` = none |
 | `--consensus_min_reads` | `100000` | No | microbial reads (classified minus human and synthetic construct) a sample needs for MetaPhlAn (and HUMAnN) |
 | `--run_decontam` | `true` | No | decontamination; needs `--metadata_file` + role parameters |
 | `--metadata_file` | TSV/CSV path | With decontam or batch correction | per-sample metadata |

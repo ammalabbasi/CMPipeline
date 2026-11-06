@@ -129,8 +129,8 @@ Paths and values are validated before the first task runs. The run-mode guides i
 | `--metaphlan_index` | `mpa_vJun23_CHOCOPhlAnSGB_202307` | Bowtie2 index name inside --metaphlan_db |
 | `--humann3_nucleotide_db` | `null` | Set in a site profile or with --humann3_nucleotide_db |
 | `--humann3_protein_db` | `null` | Set in a site profile or with --humann3_protein_db |
-| `--adapters` | `ref/known_adapters.fna` | the adapter FASTA for `--adapter_trim` |
-| `--adapters_core` | `ref/illumina_core_adapters.fna` | the short adapter FASTA `--adapter_trim auto` uses for BAM/CRAM reads |
+| `--adapters` | `ref/known_adapters.fna` | the 234-sequence adapter FASTA, used only with `--adapter_trim always` |
+| `--adapters_core` | `ref/illumina_core_adapters.fna` | the 5-sequence Illumina adapter FASTA `--adapter_trim auto` uses for every sample |
 | `--adapter_trim` | `auto` | auto | always | never -- see the adapter_trim note in the workflow below |
 
 ## Conda Environment Paths

@@ -4,6 +4,12 @@ Not yet released; these are the changes since the last tagged state of `main`.
 
 **Correctness fixes that change results** — read these before comparing against older output.
 
+- **FASTQ input also uses the 5-sequence adapter list (`--adapter_trim auto`, 6 Nov 2026).** `auto` scanned
+  FASTQ against the 234-sequence list, which made fastp take 6-7 h per sample on a large FASTQ cohort (some
+  tasks hit the 2-day limit). The short list found every planted adapter in the synthetic test at 1/38 of the
+  time; the full list's extra hits were spurious. `--adapter_trim always` keeps the 234-sequence list.
+  **Read counts after fastp can change slightly for FASTQ input.**
+
 - **The MetaPhlAn gate counts microbial reads (decision 1, 27 Oct 2026).** `--consensus_min_reads` was
   compared with the KrakenUniq `root` count, which includes human and *synthetic construct*; in CRC50 the
   latter was 94-99% of it, so vector reads decided which samples reached MetaPhlAn (and HUMAnN). The gate

@@ -376,8 +376,8 @@ def render(rows, record, qc_path, validation_report=None, consensus_status=None)
         "Filtering and depletion",
         "Per-sample read accounting. <code>Adapter scan</code> records whether the "
         "adapter FASTA was used for that sample — <code>--adapter_trim auto</code> "
-        "uses the 234-sequence list for FASTQ and the 5-sequence Illumina list for reads "
-        "extracted from an alignment.",
+        "uses the 5-sequence Illumina list for every sample; <code>always</code> uses the "
+        "234-sequence list.",
     )
 
     classification = table(

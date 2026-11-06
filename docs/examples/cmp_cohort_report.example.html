@@ -90,7 +90,7 @@ code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.92em}
 </section>
 <section>
   <h2>Filtering and depletion</h2>
-  <p class="lede">Per-sample read accounting. <code>Adapter scan</code> records whether an adapter FASTA was used for that sample — <code>--adapter_trim auto</code> uses the 234-sequence list for FASTQ and the 5-sequence Illumina list for reads extracted from an alignment.</p>
+  <p class="lede">Per-sample read accounting. <code>Adapter scan</code> records whether an adapter FASTA was used for that sample — <code>--adapter_trim auto</code> uses the 5-sequence Illumina list for every sample; <code>always</code> uses the 234-sequence list.</p>
   <div class="scroll"><table><thead><tr><th>Sample</th><th>Library (BAM/CRAM)</th><th>Reads into QC</th><th>After fastp</th><th>Pass %</th><th>Dup.</th><th>Adapter scan</th><th>Host depleted</th><th>Retained %</th></tr></thead>
     <tbody><tr><td>itest_bam</td><td>99</td><td>56</td><td>56</td><td>100.0%</td><td>0.000</td><td>false</td><td>48</td><td>85.7%</td></tr><tr><td>itest_cram</td><td>77</td><td>44</td><td>44</td><td>100.0%</td><td>0.000</td><td>false</td><td>39</td><td>88.6%</td></tr><tr><td>itest_fq1</td><td>—</td><td>72</td><td>72</td><td>100.0%</td><td>0.000</td><td>true</td><td>42</td><td>58.3%</td></tr><tr><td>itest_fq2</td><td>—</td><td>58</td><td>58</td><td>100.0%</td><td>0.000</td><td>true</td><td>34</td><td>58.6%</td></tr><tr><td>itest_thin</td><td>—</td><td>3</td><td>3</td><td>100.0%</td><td>0.000</td><td>false</td><td>1</td><td>33.3%</td></tr></tbody></table></div>
 </section>

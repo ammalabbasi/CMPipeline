@@ -220,7 +220,7 @@ params.metaphlan_index="mpa_vJun23_CHOCOPhlAnSGB_202307"  // Bowtie2 index name 
 params.humann3_nucleotide_db=null  // Set in a site profile or with --humann3_nucleotide_db
 params.humann3_protein_db=null     // Set in a site profile or with --humann3_protein_db
 params.adapters="${projectDir}/ref/known_adapters.fna"
-params.adapters_core="${projectDir}/ref/illumina_core_adapters.fna"  // 5 Illumina sequences, for reads extracted from BAM/CRAM
+params.adapters_core="${projectDir}/ref/illumina_core_adapters.fna"  // 5 Illumina sequences: the default for every sample
 params.adapter_trim="auto"  // auto | always | never -- see the adapter_trim note in the workflow below
 
 // ============================================================================
@@ -427,8 +427,8 @@ workflow {
     if (params.start_from == 'beginning' && !skipHostDepletion) {
         requirePathParam('hg38_db', params.hg38_db, 'for host depletion')
         requirePathParam('t2t_phix_db', params.t2t_phix_db, 'for host depletion')
-        if (adapterTrimMode != 'never') requirePathParam('adapters', params.adapters, 'for adapter trimming (or use --adapter_trim never)')
-        if (adapterTrimMode == 'auto') requirePathParam('adapters_core', params.adapters_core, 'for adapter trimming of BAM/CRAM reads (or use --adapter_trim always|never)')
+        if (adapterTrimMode == 'always') requirePathParam('adapters', params.adapters, 'for --adapter_trim always')
+        if (adapterTrimMode == 'auto') requirePathParam('adapters_core', params.adapters_core, 'for adapter trimming (or use --adapter_trim never)')
 
         def pangenomeIndex = pathParam('pangenome_db', params.pangenome_db)
         if (pangenomeIndex && pangenomeIndex.isDirectory() && !pangenomeIndex.listFiles().any { it.name.endsWith('.mmi') }) {
@@ -854,13 +854,12 @@ workflow {
             // Perform FastQC on the extracted fastq files
             FASTQC1(UNMAPPED_READS.map { sampleID, reads, pretrimmed -> tuple(sampleID, reads) })
 
-            // adapter_trim auto: FASTQ -> --adapters (234 seqs); BAM/CRAM reads -> --adapters_core (5), since
-            // GDC did not trim before bwa. Measurements: docs/running/classification.md#adapter-trimming.
+            // adapter_trim: auto -> --adapters_core (5 seqs) for every sample; always -> --adapters (234 seqs);
+            // never -> none. Why and measurements: docs/running/classification.md#adapter-trimming.
+            def adapterFasta = adapterTrimMode == 'always' ? params.adapters.toString() :
+                (adapterTrimMode == 'never' ? '' : params.adapters_core.toString())
             UNMAPPED_READS
                 .map { sampleID, reads, pretrimmed ->
-                    def adapterFasta = adapterTrimMode == 'always' ? params.adapters.toString() :
-                        (adapterTrimMode == 'never' ? '' :
-                            (pretrimmed ? params.adapters_core.toString() : params.adapters.toString()))
                     tuple(sampleID, reads, adapterFasta)
                 }
                 .set { FILTER_INPUT }

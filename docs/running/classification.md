@@ -6,10 +6,14 @@ How KrakenUniq/Bracken, the MetaPhlAn gate and consensus behave, plus adapter tr
 
 `--adapter_trim` chooses the adapter FASTA fastp scans reads against:
 
-- `auto` (default): raw FASTQ against `--adapters` (`ref/known_adapters.fna`, 234
-  sequences); reads extracted from a BAM or CRAM against `--adapters_core`
+- `auto` (default): every sample, FASTQ or BAM/CRAM, against `--adapters_core`
   (`ref/illumina_core_adapters.fna`: TruSeq read 1/2, TruSeq2 SE/PE, Nextera).
-- `always`: the 234-sequence list for every sample. `never`: no FASTA.
+- `always`: the 234-sequence `--adapters` list (`ref/known_adapters.fna`) for every sample.
+  `never`: no FASTA.
+
+Until 6 Nov 2026 `auto` scanned FASTQ input against the 234-sequence list. On a large FASTQ
+cohort that made `filterReads` take 6-7 h per sample, some hitting the 2-day task limit; the
+short list finds the same adapters (below), so FASTQ uses it too (Ammal, 6 Nov 2026).
 
 Without a FASTA fastp still auto-detects one adapter per read, but no more.
 
