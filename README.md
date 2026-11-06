@@ -7,11 +7,7 @@ remove reagent contaminants, correct batch effects and profile function with HUM
 
 ## How it works
 
-<img src="workflow_logo/v0.3.png" width="900" alt="CMPipeline workflow: read preparation and host depletion, taxonomic profiling (KrakenUniq/Bracken and MetaPhlAn 4), cohort consensus, species validation, decontamination, batch correction, functional profiling, and tables, reports and run records">
-
-<sub>¹ For BAM/CRAM aligned with `bwa mem -T` below 30 (GDC TCGA used `-T 0`), primary mapped reads with
-alignment score below 30 are extracted too. ² Microbial reads = KrakenUniq classified reads minus human and
-*synthetic construct* (vector) reads.</sub>
+<img src="workflow_logo/v0.4.png" width="900" alt="CMPipeline workflow: (a) read preparation and host depletion, (b) taxonomic profiling with KrakenUniq, Bracken and MetaPhlAn 4 and cross-profiler genus consensus, (c) optional functional profiling with HUMAnN 3, (d) optional alignment validation, (e) reagent decontamination, (f) optional batch correction with ConQuR, and the outputs">
 
 1. **Read preparation** extracts every primary unmapped read from BAM/CRAM input, plus low-score mapped
    reads when the aligner was `bwa mem -T` below 30 (or takes single- or paired-end FASTQ), and filters the
