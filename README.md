@@ -116,8 +116,8 @@ The main options. [`docs/parameters.md`](docs/parameters.md) lists all of them.
 | `--pangenome_db` | not set | No | extra pangenome depletion (one `.mmi` or a directory of them) |
 | `--kraken_db`, `--metaphlan_db` | directories | For classification | classifier databases |
 | `--outdir` | `RESULTS/` in the launch directory | No | output directory |
-| `--adapter_trim` | `auto` (default), `always`, `never` | No | adapter FASTA scan; `auto` skips it for reads from BAM/CRAM |
-| `--consensus_min_reads` | `100000` | No | classified reads a sample needs for MetaPhlAn (and HUMAnN) |
+| `--adapter_trim` | `auto` (default), `always`, `never` | No | adapter FASTA fastp scans: `auto` = 234-sequence list for FASTQ, 5-sequence Illumina list for reads from BAM/CRAM; `always` = 234 for all; `never` = none |
+| `--consensus_min_reads` | `100000` | No | microbial reads (classified minus human and synthetic construct) a sample needs for MetaPhlAn (and HUMAnN) |
 | `--run_decontam` | `true` | No | decontamination; needs `--metadata_file` + role parameters |
 | `--metadata_file` | TSV/CSV path | With decontam or batch correction | per-sample metadata |
 | `--taxonomic_rank` | `genus`, `species` | With decontam or batch correction | the rank of a supplied table (`--start_from decontam` / `batch_correction`); species-first runs decontaminate species and correct both species and genus |
