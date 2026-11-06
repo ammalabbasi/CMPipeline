@@ -7,15 +7,20 @@ remove reagent contaminants, correct batch effects and profile function with HUM
 
 ## How it works
 
-<img src="workflow_logo/v0.2.png" width="800" alt="CMPipeline workflow">
+<img src="workflow_logo/v0.3.png" width="900" alt="CMPipeline workflow: read preparation and host depletion, taxonomic profiling (KrakenUniq/Bracken and MetaPhlAn 4), cohort consensus, species validation, decontamination, batch correction, functional profiling, and tables, reports and run records">
 
-1. **Read preparation** extracts every primary unmapped read from BAM/CRAM input (or takes single- or
-   paired-end FASTQ) and filters the reads with fastp.
+<sub>¹ For BAM/CRAM aligned with `bwa mem -T` below 30 (GDC TCGA used `-T 0`), primary mapped reads with
+alignment score below 30 are extracted too. ² Microbial reads = KrakenUniq classified reads minus human and
+*synthetic construct* (vector) reads.</sub>
+
+1. **Read preparation** extracts every primary unmapped read from BAM/CRAM input, plus low-score mapped
+   reads when the aligner was `bwa mem -T` below 30 (or takes single- or paired-end FASTQ), and filters the
+   reads with fastp (quality, and adapters against a 5-sequence Illumina list).
 2. **Host depletion** removes reads matching the GRCh38 and T2T-CHM13 minimap2 indexes, and
    optionally a set of pangenome indexes. The T2T index (`--t2t_phix_db`) contains **no phiX** despite
    its name, so phiX spike-in is not removed ([host_depletion_references.md](docs/host_depletion_references.md)).
 3. **Classification** runs KrakenUniq and Bracken on every sample, and MetaPhlAn 4 on samples with at
-   least `--consensus_min_reads` (100,000) classified reads.
+   least `--consensus_min_reads` (100,000) microbial reads (classified minus human and synthetic construct).
 4. **Consensus** keeps the genera both profilers detect and applies that list to every sample's Bracken
    counts.
 5. **Alignment validation** *(opt-in)* aligns reads to RefSeq genomes of each species, with human in the

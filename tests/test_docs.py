@@ -61,8 +61,8 @@ class ReadmeDocumentsEveryParam(unittest.TestCase):
             for target in _re.findall(r"\]\(([^)#:]+)\)", p.read_text()):
                 with self.subTest(doc=p.name, link=target):
                     self.assertTrue((p.parent / target).exists(), f"{p.name} links to missing {target}")
-        self.assertIn('src="workflow_logo/v0.2.png"', README.read_text())
-        self.assertTrue((ROOT / "workflow_logo" / "v0.2.png").exists())
+        self.assertIn('src="workflow_logo/v0.3.png"', README.read_text())
+        self.assertTrue((ROOT / "workflow_logo" / "v0.3.png").exists())
 
     def test_allow_list_is_not_stale(self):
         stale = sorted(set(UNDOCUMENTED_OK) - set(main_nf_params()))
