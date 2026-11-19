@@ -215,6 +215,7 @@ class CountAndMask(unittest.TestCase):
                 self.assertEqual(r.returncode == 0, ok, r.stderr)
 
 
+@unittest.skipUnless(zero_tests.decontam_available(), "R/decontam/phyloseq/optparse/digest test dependencies unavailable")
 class StrictLibrary(unittest.TestCase):
     setUp = zero_tests.ZeroTotalBehaviour.setUp
     tearDown = zero_tests.ZeroTotalBehaviour.tearDown

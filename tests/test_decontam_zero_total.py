@@ -9,6 +9,7 @@ Static checks only (no R needed); the behavioural test is test_zero_total_behavi
 runs the R script when a decontam environment is available and is skipped otherwise.
 """
 import csv
+from functools import lru_cache
 import os, shutil, subprocess, tempfile, unittest, glob
 from pathlib import Path
 
@@ -50,10 +51,28 @@ def _decontam_rscript():
     for env in glob.glob(str(ROOT / ".conda_cache" / "env-*")):
         if os.path.isdir(os.path.join(env, "lib", "R", "library", "decontam")):
             return os.path.join(env, "bin", "Rscript")
-    return None
+    return shutil.which("Rscript")
 
 
-@unittest.skipUnless(_decontam_rscript(), "no decontam conda env built yet")
+@lru_cache(maxsize=1)
+def decontam_available():
+    executable = _decontam_rscript()
+    if not executable:
+        return False
+    try:
+        result = subprocess.run([executable, "--vanilla", "-e",
+            'quit(status=if(all(vapply(c("decontam","phyloseq","optparse","digest"), requireNamespace, logical(1), quietly=TRUE))) 0 else 42)'],
+            capture_output=True, text=True)
+    except FileNotFoundError:
+        return False
+    if result.returncode == 42:
+        return False
+    if result.returncode != 0:
+        raise RuntimeError(f"R dependency probe failed (exit {result.returncode}): {result.stderr}")
+    return True
+
+
+@unittest.skipUnless(decontam_available(), "R/decontam/phyloseq/optparse/digest test dependencies unavailable")
 class ZeroTotalBehaviour(unittest.TestCase):
     """Synthetic 2-batch cohort, 3 tumours + 3 normals each, batch-1 normals all zero."""
 
