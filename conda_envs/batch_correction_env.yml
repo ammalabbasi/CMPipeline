@@ -20,7 +20,7 @@ dependencies:
   - r-tidyverse=2.0.0
   - r-argparse=2.2.5
   - r-remotes=2.5.0
-  - r-vegan=2.6_4            # 2.6-4: ConQuR calls adonis, removed in later vegan
+  - r-vegan=2.6_10           # ConQuR adonis2-terms-v1 compatibility patch
   - r-doparallel=1.0.17
   - r-foreach=1.5.2
   - r-iterators=1.0.14

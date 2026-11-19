@@ -152,20 +152,20 @@ reject_existing_batch_outputs <- function(root) {
 }
 
 # K04 (audit 2026-09-30): Tune_ConQuR scores the uncorrected ("original") table of each prevalence
-# bin with adonis(tab ~ batchid) without the single-batch guard it applies to the corrected
+# bin with adonis2(tab ~ batchid) without the single-batch guard it applies to the corrected
 # candidates. A bin whose nonzero samples all sit in one batch then stops the whole rank with
 # "contrasts can be applied only to factors with 2 or more levels" (CRC50 Test 3 genus, 2026-10-06).
 # This returns Tune_ConQuR with that guard added (NA when one batch is present, as for the
 # candidates) and, when every score in a bin is NA, keeps the original table for that bin, which
 # the methods ledger then records as "original". Each edit must match exactly once, so a ConQuR
 # version with different code stops here rather than running unpatched. A GPL-3 modification at run
-# time; the packaged ConQuR is unchanged (conda_envs/local_channel/NOTICE.md).
+# time; the packaged ConQuR carries the adonis2-terms-v1 compatibility patch (conda_envs/local_channel/NOTICE.md).
 guarded_tune_conqur <- function(f = ConQuR::Tune_ConQuR) {
   # ConQuR assigns with "=", which quote() would read as an argument name, hence str2lang.
   edits <- list(
-    list(from = str2lang("R2[1, 2] = adonis(formula = tab[index, ] ~ batchid[index])$aov.tab[1, 5]"),
+    list(from = str2lang("R2[1, 2] = vegan::adonis2(formula = tab[index, ] ~ batchid[index], method = \"bray\", permutations = 999, by = \"terms\")[1, \"R2\"]"),
          to = str2lang(paste("R2[1, 2] = if (length(index) != 0 & length(unique(batchid[index])) != 1)",
-                             "adonis(formula = tab[index, ] ~ batchid[index])$aov.tab[1, 5] else NA"))),
+                             "vegan::adonis2(formula = tab[index, ] ~ batchid[index], method = \"bray\", permutations = 999, by = \"terms\")[1, \"R2\"] else NA"))),
     list(from = str2lang("index_optimal = which.min(as.numeric(R2$batch_R2))"),
          to = str2lang(paste("index_optimal = if (all(is.na(as.numeric(R2$batch_R2)))) 1L",
                              "else which.min(as.numeric(R2$batch_R2))"))))

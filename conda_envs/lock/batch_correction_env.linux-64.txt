@@ -259,7 +259,7 @@ https://conda.anaconda.org/conda-forge/linux-64/r-sparsevctrs-0.3.4-r43h2b5f3a1_
 https://conda.anaconda.org/conda-forge/noarch/r-stringr-1.5.2-r43h785f33e_0.conda#6607925b2cf647865087a739429ad04e
 https://conda.anaconda.org/conda-forge/linux-64/r-textshaping-1.0.3-r43h74f4acd_0.conda#36143ca27788b270c169463f83b2510c
 https://conda.anaconda.org/conda-forge/noarch/r-tidyselect-1.2.1-r43hc72bb7e_1.conda#f55367f874307bb57575ac1506079178
-https://conda.anaconda.org/conda-forge/linux-64/r-vegan-2.6_4-r43hd9ac46e_1.conda#fa435e0bf3b8cb34966c8579f761962c
+https://conda.anaconda.org/conda-forge/linux-64/r-vegan-2.6_10-r43h012206f_0.conda#4b4468a6f9e9de5b19921c6fe6653b42
 https://conda.anaconda.org/conda-forge/noarch/r-bslib-0.9.0-r43hc72bb7e_0.conda#7d028d04efd751bc558a6aaab0940f15
 https://conda.anaconda.org/conda-forge/noarch/r-gargle-1.6.0-r43h785f33e_0.conda#7ebef473a6a3f65a9e84d96e8f1691ae
 https://conda.anaconda.org/conda-forge/noarch/r-lava-1.8.1-r43hc72bb7e_0.conda#0e3e78dcd3e5512625e032dc251cbdf0
@@ -305,4 +305,4 @@ https://conda.anaconda.org/conda-forge/noarch/r-tidyverse-2.0.0-r43h785f33e_2.co
 https://conda.anaconda.org/conda-forge/linux-64/r-conquer-1.3.3-r43hb424bfc_4.conda#f679546860ca8c4a8a492e9985d729aa
 https://conda.anaconda.org/conda-forge/linux-64/r-quantreg-6.1-r43h012206f_0.conda#fc1a3a12a23548d109556c7d60f586cd
 @LOCAL_CHANNEL@/linux-64/r-cqrreg-1.2.1-r43_0.conda#acf917966ab69d669428210bbecbd6e1
-@LOCAL_CHANNEL@/noarch/r-conqur-2.0-r43_0.conda#9259c1f0c0492200cd188b91b60970fd
+@LOCAL_CHANNEL@/noarch/r-conqur-2.0-r43_1.conda#9d48e1c2f01008df9c571dd801154e0c

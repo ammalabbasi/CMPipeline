@@ -58,6 +58,9 @@ process BatchCorrection {
     # Presence is not enough: it must be the pinned fork the script was written against (audit A14).
     Rscript --vanilla -e 'if (!requireNamespace("ConQuR", quietly = TRUE)) stop("ConQuR is not installed in this environment (env: ", Sys.getenv("CONDA_PREFIX"), "). Use the default environment (conda_envs/lock/batch_correction_env.linux-64.txt, built by Nextflow) or rebuild the prefix with scripts/setup_batch_env.sh"); sha <- utils::packageDescription("ConQuR")\$RemoteSha; if (is.null(sha) || !startsWith(sha, "${params.conqur_sha}")) stop("ConQuR in this environment is not ivartb/ConQuR_par@${params.conqur_sha} (found: ", if (is.null(sha)) "no RemoteSha" else sha, "; env: ", Sys.getenv("CONDA_PREFIX"), "). Use the default environment or rebuild the prefix with scripts/setup_batch_env.sh")'
 
+    # Upstream SHA alone does not identify our compatibility patch.
+    Rscript --vanilla -e 'if (!identical(utils::packageDescription("ConQuR")\$CMPipelinePatch, "adonis2-terms-v1")) stop("ConQuR compatibility patch missing; rebuild with scripts/setup_batch_env.sh")'
+
     # Every value quoted: the TCGA preset's type column is 'Sample Type_x' (audit A03).
     Rscript --vanilla "${params.batch_corr_script}" \\
         --otu "${otu_table}" \\

@@ -13,5 +13,6 @@ RemoteSha: ${CONQUR_SHA}
 GithubRepo: ConQuR_par
 GithubUsername: ivartb
 GithubSHA1: ${CONQUR_SHA}
+CMPipelinePatch: adonis2-terms-v1
 DESC
 ${R} CMD INSTALL --build .

@@ -25,6 +25,6 @@ trap 'rm -rf -- "$TMP"' EXIT
 # The same substitution lib/BatchEnv.groovy makes for Nextflow.
 sed "s#@LOCAL_CHANNEL@#file://$ROOT/conda_envs/local_channel#" "$LOCK" > "$TMP/batch_correction_env.linux-64.txt"
 "$CONDA_BIN" create --yes --prefix "$PREFIX" --file "$TMP/batch_correction_env.linux-64.txt"
-CMP_PREFIX="$PREFIX" "$PREFIX/bin/Rscript" --vanilla -e 'pkgs <- c("ConQuR", "cqrReg", "vegan", "zCompositions", "doParallel"); x <- data.frame(package=pkgs, version=vapply(pkgs, function(p) as.character(packageVersion(p)), "")); write.table(x, file=file.path(Sys.getenv("CMP_PREFIX"), "cmp_batch_versions.tsv"), sep="\t", quote=FALSE, row.names=FALSE)'
+R_LIBS="$PREFIX/lib/R/library" R_LIBS_USER="$PREFIX/lib/R/library" R_LIBS_SITE="$PREFIX/lib/R/library" CMP_PREFIX="$PREFIX" "$PREFIX/bin/Rscript" --vanilla -e 'pkgs <- c("ConQuR", "cqrReg", "vegan", "zCompositions", "doParallel"); x <- data.frame(package=pkgs, version=vapply(pkgs, function(p) as.character(packageVersion(p)), "")); write.table(x, file=file.path(Sys.getenv("CMP_PREFIX"), "cmp_batch_versions.tsv"), sep="\t", quote=FALSE, row.names=FALSE)'
 sha256sum "$LOCK" > "$PREFIX/cmp_batch_lock.sha256"
 printf 'CMP_BATCH_ENV_READY=%s\n' "$PREFIX"

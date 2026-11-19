@@ -1,0 +1,38 @@
+--- a/R/ConQuR_main_tune.R
++++ b/R/ConQuR_main_tune.R
+@@ -209,7 +209,7 @@
+       tab_list[[1]] = tab
+ 
+       index = which( apply(tab, 1, sum) > 0 )
+-      R2[1, 2] = adonis(formula = tab[index, ] ~ batchid[index])$aov.tab[1, 5]
++      R2[1, 2] = vegan::adonis2(formula = tab[index, ] ~ batchid[index], method = "bray", permutations = 999, by = "terms")[1, "R2"]
+ 
+       # do correction for all combination, record results and compute PERMANOVA R2
+       for (current_method in 1:nrow(method1)){
+@@ -224,7 +224,7 @@
+ 
+         index = which( apply(tab_list[[1+current_method]], 1, sum) > 0 )
+         if (length(index) != 0 & length( unique(batchid[index]) ) != 1){
+-          R2[1+current_method, 2] = adonis(formula = tab_list[[1+current_method]][index, ] ~ batchid[index])$aov.tab[1, 5]
++          R2[1+current_method, 2] = vegan::adonis2(formula = tab_list[[1+current_method]][index, ] ~ batchid[index], method = "bray", permutations = 999, by = "terms")[1, "R2"]
+         }
+       }
+ 
+@@ -240,7 +240,7 @@
+ 
+         index = which( apply(tab_list[[1+nrow(method1)+1]], 1, sum) > 0 )
+         if (length(index) != 0 & length( unique(batchid[index]) ) != 1){
+-          R2[1+nrow(method1)+1, 2] = adonis(formula = tab_list[[1+nrow(method1)+1]][index, ] ~ batchid[index])$aov.tab[1, 5]
++          R2[1+nrow(method1)+1, 2] = vegan::adonis2(formula = tab_list[[1+nrow(method1)+1]][index, ] ~ batchid[index], method = "bray", permutations = 999, by = "terms")[1, "R2"]
+         }
+       }
+ 
+@@ -286,7 +286,7 @@
+   R2_ref = NULL
+   for (current_ref in 1:length(batch_ref_pool)){
+     index = which( apply(tax_new_list[[current_ref]], 1, sum) > 0 )
+-    R2_ref[current_ref] = adonis(formula = tax_new_list[[current_ref]][index, ] ~ batchid[index])$aov.tab[1, 5]
++    R2_ref[current_ref] = vegan::adonis2(formula = tax_new_list[[current_ref]][index, ] ~ batchid[index], method = "bray", permutations = 999, by = "terms")[1, "R2"]
+   }
+ 
+   index_final = which.min(R2_ref)

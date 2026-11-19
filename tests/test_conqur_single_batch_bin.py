@@ -33,6 +33,7 @@ class GuardWiring(unittest.TestCase):
 R_CHECK = r'''
 suppressWarnings(suppressPackageStartupMessages(library(ConQuR)))
 source(file.path("%(root)s", "scripts", "batch_contract.R"))
+stopifnot(identical(packageDescription("ConQuR")$CMPipelinePatch, "adonis2-terms-v1"))
 g <- guarded_tune_conqur()
 stopifnot(identical(environment(g), environment(ConQuR::Tune_ConQuR)))
 txt <- paste(deparse(g), collapse = "\n")
